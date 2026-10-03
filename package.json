@@ -7,12 +7,13 @@
   },
   "scripts": {
     "postinstall": "pnpm --filter @webhook/shared build",
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @webhook/shared --filter @webhook/api build",
     "lint": "eslint .",
     "typecheck": "pnpm --filter @webhook/shared build && pnpm -r typecheck",
     "test": "pnpm --filter @webhook/shared build && pnpm -r test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:docs": "pnpm --filter @webhook/shared build && pnpm --filter @webhook/api exec prisma generate && pnpm --filter @webhook/docs build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

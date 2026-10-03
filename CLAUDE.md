@@ -4,7 +4,7 @@ Stellar Testnet payment webhook service. Read everything in /docs before startin
 
 ## Current scope (agreed 3 Oct 2026)
 
-- Backend only for now: `apps/api`, `packages/shared` and `scripts`. No dashboard or docs site yet.
+- Built so far: the backend (`apps/api`, `packages/shared`, `scripts`) and the docs site (`apps/docs`, Fumadocs static export for Cloudflare Pages). No dashboard yet.
 - Local development only. Skip server setup, CI deploy and anything else that needs the live server.
 - Package manager is pnpm. Where the docs say `npm run <script>`, use `pnpm <script>` from the repo root.
 - Keep going through the backend phases without stopping at each gate; report the gate results at the end.

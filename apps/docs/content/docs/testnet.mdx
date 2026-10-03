@@ -1,0 +1,82 @@
+---
+title: Testnet guide
+description: Fund an account, add a USDC trustline and send a test payment on Stellar Testnet.
+---
+
+Webhook runs on Stellar Testnet only. Testnet lumens and tokens have no value, and the network is
+wiped from time to time.
+
+## Create and fund an account
+
+Generate a keypair in [Stellar Lab](https://lab.stellar.org/account/create) and fund it with
+Friendbot, which gives a new testnet account 10,000 XLM:
+
+```bash
+curl "https://friendbot.stellar.org?addr=G..."
+```
+
+Keep the secret key (`S...`) in your own tools only. Webhook needs just the public address (`G...`).
+
+<Callout>
+  Funding is itself a transfer. If a watch on that wallet accepts XLM and the account is funded after
+  the watch exists, the funding arrives as a payment.
+</Callout>
+
+## Add a USDC trustline
+
+A wallet can only receive a token after it has a trustline to that token's issuer. Circle's testnet
+USDC is:
+
+```text
+code:   USDC
+issuer: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+```
+
+Add it in Stellar Lab with a **Change Trust** operation signed by the wallet. Until you do, creating
+a watch for USDC returns the warning `NO_TRUSTLINE:USDC`. The watch is saved anyway.
+
+Testnet USDC is available from [Circle's faucet](https://faucet.circle.com).
+
+## Send a test payment
+
+In Stellar Lab, build a transaction from another funded account with a **Payment** operation to the
+watched wallet, add a memo if your watch requires one, sign it and submit it.
+
+To see a payment fail a rule on purpose, add `payment.rejected` to the watch's `eventTypes`, then:
+
+| Send this | Result |
+| --- | --- |
+| XLM to a USDC-only watch | `REJECTED`, `WRONG_ASSET` |
+| A token named USDC from another issuer | `REJECTED`, `WRONG_ISSUER` |
+| Less than the minimum amount | `REJECTED`, `AMOUNT_BELOW_MIN` |
+| No memo when one is required | `REJECTED`, `MEMO_MISSING` |
+
+## What counts as a payment
+
+Anything that moves the asset into the wallet:
+
+- a payment or a path payment (the amount is what the wallet received),
+- a payment to a muxed (`M...`) address of the wallet, reported on the base address with `toMuxedId`,
+- an issuer sending its own token,
+- a transfer from a contract wallet,
+- claiming a claimable balance,
+- another account being merged into the wallet.
+
+A transfer the wallet sends to itself is ignored.
+
+## Memos
+
+| Memo type | In the payload |
+| --- | --- |
+| Text | `memoType: "text"`, the text as sent. |
+| ID | `memoType: "id"`, the number as a decimal string. |
+| Hash | `memoType: "hash"`, 64 hex characters. |
+
+A `memoRule` of kind `equals` compares the type and the value. ID memos are compared as numbers, so
+`007` equals `7`.
+
+## Testnet resets
+
+When Stellar resets testnet, every account, trustline and balance is gone. Your endpoints receive a
+`system.network_reset` event. Your watches stay, but each wallet has to be created, funded and given
+its trustlines again. Recreating a wallet needs the same keypair to keep the same address.

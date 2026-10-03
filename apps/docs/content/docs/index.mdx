@@ -1,0 +1,40 @@
+---
+title: Introduction
+description: What Webhook does and how the pieces fit together.
+---
+
+Webhook tells your application when a Stellar Testnet wallet is paid. You register a wallet with the
+conditions a payment must meet and a URL on your server. When a payment arrives, Webhook checks it
+against those conditions and sends a signed HTTP request to your URL.
+
+It is non-custodial: Webhook only reads the ledger. It never holds a secret key and cannot move funds.
+
+## The three things you create
+
+| Thing | What it is |
+| --- | --- |
+| **Endpoint** | A URL on your server that receives webhooks, with its own signing secret. |
+| **Watch** | A wallet address plus rules: which assets, what amount, which memo, which senders. Each watch delivers to one endpoint. |
+| **API key** | How your server authenticates to the REST API. Starts with `whk_test_`. |
+
+## What happens to a payment
+
+1. A ledger closes on testnet, about every 5 seconds.
+2. Webhook sees every transfer to a watched wallet, whatever the asset.
+3. Each watch on that wallet evaluates the payment. The result is `VERIFIED` or `REJECTED`, with every
+   reason it failed.
+4. A verified payment creates one `payment.received` event. A rejected one creates `payment.rejected`
+   only if the watch asked for it.
+5. The event is signed and sent to the watch's endpoint. If your server does not answer with a `2xx`,
+   it is retried for up to two days.
+
+A payment normally reaches your server 5 to 10 seconds after the ledger closes.
+
+## Where to go next
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="From nothing to a received webhook in a few minutes." />
+  <Card title="Webhook reference" href="/docs/webhooks" description="Event types, payload fields and headers." />
+  <Card title="Verifying signatures" href="/docs/verifying-signatures" description="A copy-paste Node.js function." />
+  <Card title="API reference" href="/api-reference" description="Every REST endpoint." />
+</Cards>

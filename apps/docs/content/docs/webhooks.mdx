@@ -1,0 +1,111 @@
+---
+title: Webhook reference
+description: Event types, the payload, the request headers and what your server must answer.
+---
+
+Every webhook is an HTTPS `POST` with a JSON body.
+
+## Request headers
+
+| Header | Value |
+| --- | --- |
+| `Content-Type` | `application/json` |
+| `User-Agent` | `Webhook/1.0` |
+| `Webhook-Id` | The event ID, for example `evt_01K6V8Z3M4T7Q2X9B5N1R0C8YD`. The same on every retry and resend. |
+| `Webhook-Timestamp` | Unix time in seconds when this attempt was sent. |
+| `Webhook-Attempt` | Attempt number, starting at 1. |
+| `Webhook-Signature` | `v1=<hex>`. For 24 hours after a secret rotation: `v1=<new>, v1=<old>`. |
+
+## Answering
+
+| You answer | What happens |
+| --- | --- |
+| Any `2xx` within 10 seconds | Delivered. |
+| `410 Gone` | The delivery fails and the endpoint is disabled. You are emailed. |
+| Anything else, a timeout, or a connection error | Retried. See [retries](/docs/retries-and-duplicates). |
+| A redirect (`3xx`) | Not followed. Counted as a failure and retried. |
+
+Only the first 64 KB of your response is read, and the first 1 KB is kept for debugging.
+
+## Envelope
+
+Every event has the same outer shape.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | Event ID. Equal to the `Webhook-Id` header. |
+| `type` | string | One of the event types below. |
+| `apiVersion` | string | Version of the payload format, currently `2026-10-01`. |
+| `createdAt` | string | When the event was created, ISO 8601. |
+| `data` | object | Depends on the type. |
+
+The payload is fixed when the event is created. Retries and resends send exactly the same body, even
+if you change the watch afterwards.
+
+## Event types
+
+### payment.received
+
+A payment met every rule of a watch.
+
+### payment.rejected
+
+A payment reached the wallet but failed at least one rule. Sent only if the watch's `eventTypes`
+includes `payment.rejected`.
+
+Both payment events carry the same `data`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `payment.id` | string | Unique ID of this payment. |
+| `payment.txHash` | string | Stellar transaction hash. |
+| `payment.ledger` | number | Ledger the payment was in. |
+| `payment.ledgerClosedAt` | string | Close time of that ledger. This is the time of the payment. |
+| `payment.from` | string | Sender. Usually a `G...` account; a `C...` contract or a `B...` claimable balance is possible. |
+| `payment.to` | string | Your wallet, always the base `G...` address. |
+| `payment.toMuxedId` | string or null | The ID, if the payer used a muxed (`M...`) address for your wallet. |
+| `payment.memo` | string or null | The transaction memo. Hash memos are hex. |
+| `payment.memoType` | string | `none`, `text`, `id` or `hash`. |
+| `payment.asset` | object | `code` and `issuer`. `issuer` is `null` for XLM. |
+| `payment.amount` | string | Decimal string with 7 places, for example `"10.5000000"`. |
+| `payment.amountStroops` | string | The same amount as an integer number of stroops (1 unit = 10,000,000 stroops). |
+| `watch.id`, `watch.label`, `watch.walletAddress` | | The watch that matched. |
+| `verification.outcome` | string | `VERIFIED` or `REJECTED`. |
+| `verification.reasons` | string[] | Empty when verified. Otherwise every rule that failed. |
+
+<Callout>
+  Treat amounts as strings or integers, never as floating point numbers. `amountStroops` is exact.
+</Callout>
+
+If the payer used a muxed address and set no memo, the muxed ID is also reported as an ID memo, so a
+`memoRule` works the same for both ways of tagging a payment.
+
+#### Rejection reasons
+
+| Reason | Meaning |
+| --- | --- |
+| `WRONG_ASSET` | The asset is not one the watch accepts. |
+| `WRONG_ISSUER` | Same asset code, different issuer. Usually a counterfeit. |
+| `AMOUNT_NOT_EXACT`, `AMOUNT_BELOW_MIN`, `AMOUNT_ABOVE_MAX` | The amount rule failed. |
+| `MEMO_MISSING` | A memo was required and there was none. |
+| `MEMO_MISMATCH` | The memo value differs. |
+| `MEMO_TYPE_MISMATCH` | The memo has a different type (for example text instead of ID). |
+| `MEMO_NOT_ALLOWED` | The watch requires no memo and there was one. |
+| `SENDER_NOT_ALLOWED` | The sender is not in the allowlist. |
+
+### test.ping
+
+Sent by `POST /v1/endpoints/:id/test`. `data` holds `endpointId` and a `message`.
+
+### system.network_reset
+
+Stellar Testnet is reset from time to time, which wipes every account and balance. When that happens
+each of your active endpoints receives this event. `data.newTipLedger` is the first ledger seen on
+the new network. Your watches keep working, but the wallets must be created and funded again.
+
+## Endpoint requirements
+
+- `https` only, on port 443 or 8443, with a valid certificate.
+- No credentials in the URL.
+- The host must resolve to a public address. Private, loopback and link-local addresses are refused,
+  both when you save the endpoint and each time a webhook is sent.

@@ -1,0 +1,106 @@
+---
+title: Verifying signatures
+description: Prove a webhook came from Webhook and was not altered, with a copy-paste Node.js function.
+---
+
+Anyone who learns your endpoint URL can send it a request. The signature lets you reject everything
+that was not sent by Webhook with your endpoint's secret.
+
+## How the signature is made
+
+```text
+signature = hex( HMAC-SHA256( secret, timestamp + "." + rawBody ) )
+```
+
+- `secret` is the endpoint's signing secret, the whole string including `whsec_`.
+- `timestamp` is the `Webhook-Timestamp` header.
+- `rawBody` is the request body exactly as received, before any JSON parsing.
+
+The result is sent as `Webhook-Signature: v1=<hex>`.
+
+## Node.js
+
+This function has no dependencies. It is tested against the service's real signer.
+
+```js title="verify-webhook.mjs"
+// verify-webhook.mjs
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+/**
+ * @param {string} secret   The endpoint's signing secret (whsec_...).
+ * @param {Record<string, string | undefined>} headers  Request headers, lower-cased names.
+ * @param {string} rawBody  The request body exactly as received.
+ * @returns {boolean} true only if the request is authentic and recent.
+ */
+export function verifyWebhook(secret, headers, rawBody, toleranceSeconds = 300) {
+  const timestamp = headers["webhook-timestamp"] ?? "";
+  if (!/^\d{1,12}$/.test(timestamp)) return false;
+  // Reject old requests so a captured one cannot be replayed later.
+  if (Math.abs(Date.now() / 1000 - parseInt(timestamp, 10)) > toleranceSeconds) return false;
+
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest();
+  // During a secret rotation the header carries two signatures: accept either.
+  return (headers["webhook-signature"] ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith("v1="))
+    .some((part) => {
+      const given = Buffer.from(part.slice(3), "hex");
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    });
+}
+```
+
+## Using it with Express
+
+The signature covers the raw bytes, so read the body as text before parsing it.
+
+```js title="server.mjs"
+import express from "express";
+import { verifyWebhook } from "./verify-webhook.mjs";
+
+const app = express();
+
+app.post("/webhooks/stellar", express.text({ type: "application/json" }), (req, res) => {
+  if (!verifyWebhook(process.env.WEBHOOK_SECRET, req.headers, req.body)) {
+    return res.status(400).send("invalid signature");
+  }
+  const event = JSON.parse(req.body);
+  // 1. Skip it if event.id was already processed.  2. Store it.  3. Answer, then do the work.
+  res.sendStatus(200);
+});
+
+app.listen(3000);
+```
+
+<Callout type="warn">
+  If your framework parses JSON before your handler runs, the re-serialised body will not match the
+  signature. Always verify the bytes you received.
+</Callout>
+
+## Other languages
+
+The check is the same everywhere:
+
+1. Read `Webhook-Timestamp` and refuse the request if it is more than 5 minutes from your clock.
+2. Compute HMAC-SHA256 of `timestamp + "." + rawBody` with the secret, as lowercase hex.
+3. Split `Webhook-Signature` on commas and compare each `v1=` value to your result using a
+   constant-time comparison. One match is enough.
+
+## Rotating a secret
+
+`POST /v1/endpoints/:id/rotate-secret` returns a new secret. For the next 24 hours every webhook is
+signed with both the new and the previous secret, so you can deploy the new one without dropping
+requests. Rotating again inside that window keeps the earlier secrets valid until their own 24
+hours end.
+
+## Test vector
+
+Use this to check an implementation in any language.
+
+| | |
+| --- | --- |
+| Secret | `whsec_dGVzdC12ZWN0b3Itc2VjcmV0LWZvci13ZWJob29rLWRvY3M` |
+| `Webhook-Timestamp` | `1790000000` |
+| Body | `{"id":"evt_01J9Z6K3QW0000000000000000","type":"payment.received","apiVersion":"2026-10-01","createdAt":"2026-10-03T12:00:00.000Z","data":{"payment":{"amount":"10.0000000","amountStroops":"100000000"}}}` |
+| Expected signature | `3d5f81d9dc2d14a46db849030bb9541d7d9c30bad2e28c9e21ff84263d97ef3a` |

@@ -1,0 +1,96 @@
+---
+title: Retries and duplicates
+description: How failed deliveries are retried, and why your handler must tolerate receiving an event twice.
+---
+
+## Delivery is at-least-once
+
+Webhook guarantees that an event is delivered, not that it is delivered exactly once. Over HTTP nobody
+can promise exactly once: if your server processes a request and the connection drops before the
+`200` arrives, the sender cannot know whether it worked, and has to send it again.
+
+So your handler will occasionally see the same event twice. The `Webhook-Id` header (and the `id` in
+the body) is identical every time, which makes duplicates easy to drop.
+
+## Dropping duplicates
+
+Keep a record of the event IDs you have processed, with a unique constraint.
+
+```sql
+CREATE TABLE processed_webhooks (
+  event_id   text PRIMARY KEY,
+  received_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+In your handler, insert the ID first. If the insert conflicts, you have seen the event: answer `200`
+and do nothing else.
+
+```js
+const inserted = await db.query(
+  "INSERT INTO processed_webhooks (event_id) VALUES ($1) ON CONFLICT DO NOTHING",
+  [event.id],
+);
+if (inserted.rowCount === 0) return res.sendStatus(200); // duplicate
+```
+
+One payment matched by one watch always produces exactly one event ID, however many times the
+ledger is re-read.
+
+## Retry schedule
+
+An attempt fails if your server answers with anything other than a `2xx`, takes longer than 10
+seconds, redirects, or cannot be reached. After a failed attempt the next one waits:
+
+| After attempt | Wait before the next |
+| --- | --- |
+| 1 | 30 seconds |
+| 2 | 2 minutes |
+| 3 | 10 minutes |
+| 4 | 30 minutes |
+| 5 | 1 hour |
+| 6 | 3 hours |
+| 7 | 6 hours |
+| 8 | 12 hours |
+| 9 | 24 hours |
+
+Each wait varies by up to 20% either way. After the 10th failed attempt the delivery is marked
+`FAILED`. That is about two days of trying.
+
+## When an endpoint is disabled
+
+An endpoint is disabled, and you are emailed, when:
+
+- it answers `410 Gone`, or
+- 20 events in a row fail all 10 attempts.
+
+Nothing is sent to a disabled endpoint. Events keep being recorded and wait.
+
+To recover:
+
+1. Fix your server.
+2. Re-enable the endpoint: `POST /v1/endpoints/:id/enable`. Deliveries that were still waiting
+   resume. Deliveries that had already failed stay failed.
+3. Replay the failed ones: `POST /v1/endpoints/:id/replay` with `{ "since": "2026-10-01T00:00:00Z" }`.
+   Up to 1,000 failed deliveries created since that time are queued again.
+
+## Resending one event
+
+`POST /v1/events/:id/resend` queues an event again, including one that was already delivered. It
+keeps the same `Webhook-Id`, so a correct handler treats it as a duplicate unless you have removed
+the ID from your record.
+
+## Checking what happened
+
+`GET /v1/events/:id` returns the payload and every attempt: when it was sent, how long it took, the
+status code, the error and the first 1 KB of your server's response.
+
+| Error | Meaning |
+| --- | --- |
+| `TIMEOUT` | No complete response within 10 seconds. |
+| `DNS` | The hostname did not resolve. |
+| `CONN_REFUSED` | The connection could not be made or was dropped. |
+| `TLS` | The certificate is invalid or the TLS handshake failed. |
+| `REDIRECT` | Your server answered with a `3xx`. |
+| `SSRF_BLOCKED` | The hostname resolved to a private or internal address. |
+| `BODY_TOO_LARGE` | Your response was over 64 KB. The status code still counts. |

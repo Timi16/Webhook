@@ -8,13 +8,27 @@ const AMOUNT_MESSAGE =
   "Amounts are bigint stroops, never floats. Use the helpers in apps/api/src/lib/amount.ts.";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "docs/**", "ecosystem.config.cjs"] },
+  {
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "docs/**",
+      "ecosystem.config.cjs",
+      "**/.next/**",
+      "**/out/**",
+      "**/.source/**",
+      "**/next-env.d.ts",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
       "@typescript-eslint/ban-ts-comment": [
         "error",
         { "ts-ignore": "allow-with-description", "ts-expect-error": "allow-with-description" },

@@ -1,0 +1,135 @@
+---
+title: Quickstart
+description: Create an endpoint, watch a wallet and receive your first webhook.
+---
+
+You need a server reachable over HTTPS (port 443 or 8443) that can receive a `POST`, and `curl`.
+
+Set two variables so the commands below can be pasted as they are:
+
+```bash
+export API=https://api.your-domain.com         # the Webhook API
+export DASHBOARD=https://your-dashboard.com    # the origin the API trusts for browser requests
+```
+
+## 1. Create an account and an API key
+
+Accounts are session based, so these two calls keep a cookie. Every later call uses the API key.
+
+```bash
+curl -c cookies.txt -X POST $API/auth/signup \
+  -H "Origin: $DASHBOARD" -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"a long passphrase"}'
+
+curl -b cookies.txt -X POST $API/v1/api-keys \
+  -H "Origin: $DASHBOARD" -H "Content-Type: application/json" \
+  -d '{"name":"my server"}'
+```
+
+The second response contains `key`, starting with `whk_test_`. It is shown once; store it now.
+
+```bash
+export KEY=whk_test_...
+```
+
+<Callout type="warn">
+  Passwords need at least 10 characters. The `Origin` header is required on these two calls because
+  they use a cookie; calls made with an API key do not need it.
+</Callout>
+
+## 2. Create an endpoint
+
+```bash
+curl -X POST $API/v1/endpoints \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/webhooks/stellar","description":"production"}'
+```
+
+The response contains the endpoint's `id` and its `secret` (`whsec_...`). The secret is also shown
+only once. Your server uses it to [verify signatures](/docs/verifying-signatures).
+
+## 3. Check that your server receives webhooks
+
+```bash
+curl -X POST $API/v1/endpoints/ENDPOINT_ID/test -H "Authorization: Bearer $KEY"
+```
+
+This sends a `test.ping` event and returns the result of the first attempt:
+
+```json
+{ "eventId": "evt_01K...", "attempt": { "statusCode": 200, "durationMs": 84, "error": null } }
+```
+
+## 4. Watch a wallet
+
+```bash
+curl -X POST $API/v1/watches \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{
+    "walletAddress": "G...",
+    "label": "Shop checkout",
+    "endpointId": "ENDPOINT_ID",
+    "assets": [{ "code": "USDC", "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" }],
+    "amountRule": { "kind": "min", "amount": "10" },
+    "memoRule": { "kind": "present" }
+  }'
+```
+
+The response includes `warnings`. `ACCOUNT_NOT_FOUND` or `NO_TRUSTLINE:USDC` mean the wallet cannot
+receive that asset yet; the watch is still saved, so you can fix the wallet afterwards.
+
+<Callout type="error">
+  `walletAddress` is the public address, starting with `G`. If you paste a secret key (`S...`) the
+  request is refused. Never send a secret key to any service.
+</Callout>
+
+### Rules you can set
+
+| Field | Options |
+| --- | --- |
+| `assets` | One or more of `{ "code": "XLM", "issuer": null }` or `{ "code": "...", "issuer": "G..." }`. |
+| `amountRule` | `{ "kind": "any" }`, `exact`, `min` or `max` with `amount`, or `range` with `min` and `max`. Amounts are decimal strings; edges are inclusive. |
+| `memoRule` | `{ "kind": "any" }`, `present`, `absent`, or `equals` with `value` and `type` (`text`, `id` or `hash`). |
+| `senderAllowlist` | Addresses allowed to pay. Empty means anyone. |
+| `eventTypes` | `payment.received` (default). Add `payment.rejected` to be told about payments that fail the rules. |
+
+## 5. Send a payment
+
+Pay the wallet on testnet with at least 10 USDC and any memo. See the [testnet guide](/docs/testnet)
+for funding an account and sending a payment. Within seconds your server receives:
+
+```json
+{
+  "id": "evt_01K6V8Z3M4T7Q2X9B5N1R0C8YD",
+  "type": "payment.received",
+  "apiVersion": "2026-10-01",
+  "createdAt": "2026-10-03T20:41:22.512Z",
+  "data": {
+    "payment": {
+      "id": "0021506181151346688-0000000000",
+      "txHash": "afe052cee2d66dae5ba90e3010655a8e4ebcc5fe1db3352aa42e45036e6240d4",
+      "ledger": 5007298,
+      "ledgerClosedAt": "2026-10-03T20:41:17.000Z",
+      "from": "GDXT3JQDWX7IXTYCSFPK4RANVX2EJDTQ57L2IZWSYBLDZIUPAFJCQAUF",
+      "to": "GBFMHWFQFQV3ZGGTWFFBGJQJPTRX3UBT7ZWBMUELVHJIUBSFDP5HQD56",
+      "toMuxedId": null,
+      "memo": "order-1001",
+      "memoType": "text",
+      "asset": { "code": "USDC", "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" },
+      "amount": "10.0000000",
+      "amountStroops": "100000000"
+    },
+    "watch": { "id": "cm...", "label": "Shop checkout", "walletAddress": "GBFM..." },
+    "verification": { "outcome": "VERIFIED", "reasons": [] }
+  }
+}
+```
+
+Answer with any `2xx` status within 10 seconds. Do the real work after you have answered.
+
+## What to do in your handler
+
+1. [Verify the signature](/docs/verifying-signatures) using the raw request body.
+2. Check whether you have already processed this `Webhook-Id`. If so, answer `200` and stop.
+   See [retries and duplicates](/docs/retries-and-duplicates).
+3. Record the event, answer `200`, then process it.

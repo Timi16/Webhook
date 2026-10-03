@@ -11,13 +11,14 @@ The full spec lives in [docs/](docs/): [build plan](docs/BUILD_PLAN.md),
 
 ## What's here
 
-| Path              | What it is                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------ |
-| `apps/api`        | One codebase, two processes: the REST API (`server.ts`) and the worker (`worker.ts`) |
-| `packages/shared` | Zod schemas, amount helpers and StrKey checks shared with the future dashboard       |
-| `scripts`         | Testnet scenario, mock webhook receiver, seed and chaos checks                       |
+| Path              | What it is                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `apps/api`        | One codebase, two processes: the REST API (`server.ts`) and the worker (`worker.ts`)   |
+| `packages/shared` | Zod schemas, amount helpers and StrKey checks shared with the future dashboard         |
+| `apps/docs`       | Developer docs: guides (Fumadocs) and an API reference (Scalar) generated from the API |
+| `scripts`         | Testnet scenario, mock webhook receiver, seed and chaos checks                         |
 
-The dashboard (`apps/web`), docs site (`apps/docs`) and server deployment are not built yet.
+The dashboard (`apps/web`) and server deployment are not built yet.
 
 ## Local setup
 
@@ -56,6 +57,37 @@ pnpm --filter @webhook/scripts scenario          # 20 real testnet payments, ass
 The scenario creates Friendbot accounts, sends every kind of payment (normal, wrong asset,
 fake-issuer USDC, wrong amount, memo cases, path payment, M-address, issuer mint) and checks that
 exactly 20 payments are recorded with the right outcomes and that 20 signed webhooks arrive.
+
+## Docs site
+
+`apps/docs` is a static site: five guides written in MDX and an API reference rendered by Scalar
+from `openapi.json`, which is generated from the API's own schemas at build time.
+
+```sh
+pnpm --filter @webhook/docs dev     # http://localhost:3100
+pnpm build:docs                     # static site in apps/docs/out
+```
+
+The verification snippet on the "Verifying signatures" page is extracted and run against the real
+signer by the API's tests, and every response is checked against the schema shown in the reference.
+
+### Deploying to Cloudflare Pages
+
+Create a Pages project connected to the repository with:
+
+| Setting                | Value                 |
+| ---------------------- | --------------------- |
+| Build command          | `pnpm build:docs`     |
+| Build output directory | `apps/docs/out`       |
+| Root directory         | (repository root)     |
+| Environment variable   | `NODE_VERSION` = `22` |
+
+Or upload a local build without connecting a repository:
+
+```sh
+pnpm build:docs
+npx wrangler pages deploy apps/docs/out --project-name webhook-docs
+```
 
 ## Running with pm2
 
