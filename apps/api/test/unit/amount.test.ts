@@ -14,12 +14,22 @@ describe("toStroops", () => {
     expect(toStroops(input)).toBe(expected);
   });
 
-  it.each(["", "abc", "1.", ".5", "-1", "+1", "1e3", "1,5", " 1", "1.00000001", "0x10", "1234567890123"])(
-    "rejects %j",
-    (input) => {
-      expect(() => toStroops(input)).toThrow(AmountError);
-    },
-  );
+  it.each([
+    "",
+    "abc",
+    "1.",
+    ".5",
+    "-1",
+    "+1",
+    "1e3",
+    "1,5",
+    " 1",
+    "1.00000001",
+    "0x10",
+    "1234567890123",
+  ])("rejects %j", (input) => {
+    expect(() => toStroops(input)).toThrow(AmountError);
+  });
 
   it("rejects amounts above the int64 limit", () => {
     expect(() => toStroops("922337203685.4775808")).toThrow(AmountError);
@@ -57,8 +67,15 @@ describe("amount properties", () => {
 
   it("string -> stroops -> string preserves the value", () => {
     const amount = fc
-      .tuple(fc.bigInt({ min: 0n, max: 99_999_999_999n }), fc.integer({ min: 0, max: 9_999_999 }), fc.integer({ min: 1, max: 7 }))
-      .map(([whole, fraction, digits]) => `${whole}.${String(fraction).padStart(7, "0").slice(0, digits)}`);
+      .tuple(
+        fc.bigInt({ min: 0n, max: 99_999_999_999n }),
+        fc.integer({ min: 0, max: 9_999_999 }),
+        fc.integer({ min: 1, max: 7 }),
+      )
+      .map(
+        ([whole, fraction, digits]) =>
+          `${whole}.${String(fraction).padStart(7, "0").slice(0, digits)}`,
+      );
     fc.assert(
       fc.property(amount, (text) => {
         const [whole = "", fraction = ""] = text.split(".");

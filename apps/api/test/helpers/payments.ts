@@ -32,7 +32,9 @@ export function makePayment(overrides: Partial<NormalizedPayment> = {}): Normali
 }
 
 export function makeRules(
-  overrides: Partial<Pick<ParsedWatch, "assets" | "amountRule" | "memoRule" | "senderAllowlist">> = {},
+  overrides: Partial<
+    Pick<ParsedWatch, "assets" | "amountRule" | "memoRule" | "senderAllowlist">
+  > = {},
 ): Pick<ParsedWatch, "assets" | "amountRule" | "memoRule" | "senderAllowlist"> {
   return {
     assets: [USDC],

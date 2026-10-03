@@ -35,7 +35,9 @@ describe("webhook signature", () => {
   it("verifies a single signature and either signature during a rotation", () => {
     const opts = { now: vector.timestamp + 10 };
     const ts = String(vector.timestamp);
-    expect(verifySignature(vector.secret, `v1=${vector.signature}`, ts, vector.body, opts)).toBe(true);
+    expect(verifySignature(vector.secret, `v1=${vector.signature}`, ts, vector.body, opts)).toBe(
+      true,
+    );
     const rotated = `v1=${"0".repeat(64)}, v1=${vector.signature}`;
     expect(verifySignature(vector.secret, rotated, ts, vector.body, opts)).toBe(true);
   });
@@ -46,7 +48,9 @@ describe("webhook signature", () => {
     const opts = { now: vector.timestamp };
     expect(verifySignature(vector.secret, header, ts, vector.body + " ", opts)).toBe(false);
     expect(verifySignature("whsec_other", header, ts, vector.body, opts)).toBe(false);
-    expect(verifySignature(vector.secret, header, ts, vector.body, { now: vector.timestamp + 301 })).toBe(false);
+    expect(
+      verifySignature(vector.secret, header, ts, vector.body, { now: vector.timestamp + 301 }),
+    ).toBe(false);
     expect(verifySignature(vector.secret, header, "abc", vector.body, opts)).toBe(false);
   });
 });

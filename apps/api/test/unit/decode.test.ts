@@ -1,4 +1,12 @@
-import { Account, Address, Asset, MuxedAccount, nativeToScVal, Networks, xdr } from "@stellar/stellar-sdk";
+import {
+  Account,
+  Address,
+  Asset,
+  MuxedAccount,
+  nativeToScVal,
+  Networks,
+  xdr,
+} from "@stellar/stellar-sdk";
 import { describe, expect, it } from "vitest";
 import { decodeEvent, type RpcEventLike } from "../../src/engine/decode.js";
 import { randomAddress } from "../helpers/payments.js";
@@ -9,10 +17,14 @@ const NATIVE_CONTRACT = Asset.native().contractId(PASSPHRASE);
 // Event values captured from testnet during the Phase 1 spike.
 const SPIKE = {
   plain: "AAAACgAAAAAAAAAAAAAAAACYloA=", // 1 XLM, no memo
-  memoText: "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAABMS0AAAAADwAAAAt0b19tdXhlZF9pZAAAAAAOAAAABWhlbGxvAAAA",
-  memoId: "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAABycOAAAAADwAAAAt0b19tdXhlZF9pZAAAAAAFAAAAAAAAAAc=",
-  memoHash: "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAACYloAAAAADwAAAAt0b19tdXhlZF9pZAAAAAANAAAAIKurq6urq6urq6urq6urq6urq6urq6urq6urq6urq6ur",
-  muxedDest: "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAC+vCAAAAADwAAAAt0b19tdXhlZF9pZAAAAAAFAAAAAAAAACo=",
+  memoText:
+    "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAABMS0AAAAADwAAAAt0b19tdXhlZF9pZAAAAAAOAAAABWhlbGxvAAAA",
+  memoId:
+    "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAABycOAAAAADwAAAAt0b19tdXhlZF9pZAAAAAAFAAAAAAAAAAc=",
+  memoHash:
+    "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAACYloAAAAADwAAAAt0b19tdXhlZF9pZAAAAAANAAAAIKurq6urq6urq6urq6urq6urq6urq6urq6urq6urq6ur",
+  muxedDest:
+    "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAC+vCAAAAADwAAAAt0b19tdXhlZF9pZAAAAAAFAAAAAAAAACo=",
 };
 
 const symbol = (s: string) => xdr.ScVal.scvSymbol(s);
@@ -57,9 +69,18 @@ describe("decodeEvent", () => {
   });
 
   it("W11: maps to_muxed_id by type - string to text, u64 to id (decimal), bytes to hash (hex)", () => {
-    const decode = (value: string) => decodeEvent(transferEvent({ value: fromSpike(value) }), PASSPHRASE);
-    expect(decode(SPIKE.memoText)).toMatchObject({ memo: "hello", memoType: "text", amountStroops: 20_000_000n });
-    expect(decode(SPIKE.memoId)).toMatchObject({ memo: "7", memoType: "id", amountStroops: 30_000_000n });
+    const decode = (value: string) =>
+      decodeEvent(transferEvent({ value: fromSpike(value) }), PASSPHRASE);
+    expect(decode(SPIKE.memoText)).toMatchObject({
+      memo: "hello",
+      memoType: "text",
+      amountStroops: 20_000_000n,
+    });
+    expect(decode(SPIKE.memoId)).toMatchObject({
+      memo: "7",
+      memoType: "id",
+      amountStroops: 30_000_000n,
+    });
     expect(decode(SPIKE.memoHash)).toMatchObject({ memo: "ab".repeat(32), memoType: "hash" });
   });
 
@@ -72,7 +93,9 @@ describe("decodeEvent", () => {
     const muxedTo = new MuxedAccount(new Account(to, "0"), "5").accountId();
     const muxedFrom = new MuxedAccount(new Account(from, "0"), "6").accountId();
     const payment = decodeEvent(
-      transferEvent({ topic: [symbol("transfer"), text(muxedFrom), text(muxedTo), text("native")] }),
+      transferEvent({
+        topic: [symbol("transfer"), text(muxedFrom), text(muxedTo), text("native")],
+      }),
       PASSPHRASE,
     );
     expect(payment).toMatchObject({ from, to, toMuxedId: "5" });
@@ -100,7 +123,9 @@ describe("decodeEvent", () => {
 
   it("W10: decodes a transfer from a contract wallet (C address payer)", () => {
     const payment = decodeEvent(
-      transferEvent({ topic: [symbol("transfer"), address(NATIVE_CONTRACT), address(to), text("native")] }),
+      transferEvent({
+        topic: [symbol("transfer"), address(NATIVE_CONTRACT), address(to), text("native")],
+      }),
       PASSPHRASE,
     );
     expect(payment).toMatchObject({ from: NATIVE_CONTRACT, to });
@@ -119,7 +144,10 @@ describe("decodeEvent", () => {
     expect(decodeEvent(transferEvent({ inSuccessfulContractCall: false }), PASSPHRASE)).toBeNull();
     expect(decodeEvent(transferEvent({ contractId: undefined }), PASSPHRASE)).toBeNull();
     expect(
-      decodeEvent(transferEvent({ topic: [symbol("burn"), address(from), text("native")] }), PASSPHRASE),
+      decodeEvent(
+        transferEvent({ topic: [symbol("burn"), address(from), text("native")] }),
+        PASSPHRASE,
+      ),
     ).toBeNull();
     expect(decodeEvent(transferEvent({ value: i128(0n) }), PASSPHRASE)).toBeNull();
     expect(decodeEvent(transferEvent({ value: i128(-5n) }), PASSPHRASE)).toBeNull();
@@ -127,7 +155,9 @@ describe("decodeEvent", () => {
     expect(decodeEvent(transferEvent({ value: text("nope") }), PASSPHRASE)).toBeNull();
     expect(
       decodeEvent(
-        transferEvent({ topic: [symbol("transfer"), address(from), address(NATIVE_CONTRACT), text("native")] }),
+        transferEvent({
+          topic: [symbol("transfer"), address(from), address(NATIVE_CONTRACT), text("native")],
+        }),
         PASSPHRASE,
       ),
     ).toBeNull();

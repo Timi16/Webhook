@@ -72,8 +72,11 @@ export function evaluateWatch(
   p: NormalizedPayment,
   w: Rules,
 ): { outcome: Outcome; reasons: ReasonCode[] } {
-  const reasons = [assetReason(p, w), amountReason(p, w), memoReason(p, w), senderReason(p, w)].filter(
-    (r): r is ReasonCode => r !== null,
-  );
+  const reasons = [
+    assetReason(p, w),
+    amountReason(p, w),
+    memoReason(p, w),
+    senderReason(p, w),
+  ].filter((r): r is ReasonCode => r !== null);
   return { outcome: reasons.length === 0 ? "VERIFIED" : "REJECTED", reasons };
 }

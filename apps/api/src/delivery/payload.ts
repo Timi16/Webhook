@@ -6,10 +6,7 @@ import { fromStroops } from "../lib/amount.js";
 export const API_VERSION = "2026-10-01";
 
 export type WebhookEventType =
-  | "payment.received"
-  | "payment.rejected"
-  | "test.ping"
-  | "system.network_reset";
+  "payment.received" | "payment.rejected" | "test.ping" | "system.network_reset";
 
 interface Envelope {
   eventId: string;
@@ -58,7 +55,10 @@ export function buildPingPayload(meta: Envelope, endpointId: string): Prisma.Inp
   return envelope(meta, { endpointId, message: "Test webhook from Webhook" });
 }
 
-export function buildNetworkResetPayload(meta: Envelope, newTipLedger: number): Prisma.InputJsonObject {
+export function buildNetworkResetPayload(
+  meta: Envelope,
+  newTipLedger: number,
+): Prisma.InputJsonObject {
   return envelope(meta, {
     newTipLedger,
     message:

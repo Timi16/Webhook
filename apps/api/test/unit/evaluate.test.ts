@@ -1,5 +1,10 @@
 import { Account, MuxedAccount } from "@stellar/stellar-sdk";
-import { memoRuleSchema, storedAmountRuleSchema, type AmountRule, type MemoRule } from "@webhook/shared";
+import {
+  memoRuleSchema,
+  storedAmountRuleSchema,
+  type AmountRule,
+  type MemoRule,
+} from "@webhook/shared";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { evaluateWatch } from "../../src/engine/evaluate.js";
@@ -32,7 +37,12 @@ describe("evaluateWatch", () => {
       }),
     );
     expect(result.outcome).toBe("REJECTED");
-    expect(result.reasons).toEqual(["WRONG_ASSET", "AMOUNT_BELOW_MIN", "MEMO_MISSING", "SENDER_NOT_ALLOWED"]);
+    expect(result.reasons).toEqual([
+      "WRONG_ASSET",
+      "AMOUNT_BELOW_MIN",
+      "MEMO_MISSING",
+      "SENDER_NOT_ALLOWED",
+    ]);
   });
 
   it("W3: USDC from a different issuer is rejected as WRONG_ISSUER", () => {
@@ -51,35 +61,58 @@ describe("evaluateWatch", () => {
 
   it("W12: amounts exactly on the min, max and range edges pass (inclusive)", () => {
     const at = (stroops: bigint, rule: unknown) =>
-      evaluateWatch(makePayment({ amountStroops: stroops }), makeRules({ amountRule: amountRule(rule) }));
+      evaluateWatch(
+        makePayment({ amountStroops: stroops }),
+        makeRules({ amountRule: amountRule(rule) }),
+      );
     expect(at(100n, { kind: "min", stroops: "100" }).outcome).toBe("VERIFIED");
     expect(at(99n, { kind: "min", stroops: "100" }).reasons).toEqual(["AMOUNT_BELOW_MIN"]);
     expect(at(100n, { kind: "max", stroops: "100" }).outcome).toBe("VERIFIED");
     expect(at(101n, { kind: "max", stroops: "100" }).reasons).toEqual(["AMOUNT_ABOVE_MAX"]);
     expect(at(100n, { kind: "range", min: "100", max: "200" }).outcome).toBe("VERIFIED");
     expect(at(200n, { kind: "range", min: "100", max: "200" }).outcome).toBe("VERIFIED");
-    expect(at(99n, { kind: "range", min: "100", max: "200" }).reasons).toEqual(["AMOUNT_BELOW_MIN"]);
-    expect(at(201n, { kind: "range", min: "100", max: "200" }).reasons).toEqual(["AMOUNT_ABOVE_MAX"]);
+    expect(at(99n, { kind: "range", min: "100", max: "200" }).reasons).toEqual([
+      "AMOUNT_BELOW_MIN",
+    ]);
+    expect(at(201n, { kind: "range", min: "100", max: "200" }).reasons).toEqual([
+      "AMOUNT_ABOVE_MAX",
+    ]);
     expect(at(101n, { kind: "exact", stroops: "100" }).reasons).toEqual(["AMOUNT_NOT_EXACT"]);
   });
 
   it("W11: ID memos compare as decimal strings and hash memos as case-insensitive hex", () => {
     const idRule = makeRules({ memoRule: memoRule({ kind: "equals", value: "007", type: "id" }) });
-    expect(evaluateWatch(makePayment({ memo: "7", memoType: "id" }), idRule).outcome).toBe("VERIFIED");
-    expect(evaluateWatch(makePayment({ memo: "8", memoType: "id" }), idRule).reasons).toEqual(["MEMO_MISMATCH"]);
-    expect(evaluateWatch(makePayment({ memo: "7", memoType: "text" }), idRule).reasons).toEqual(["MEMO_TYPE_MISMATCH"]);
+    expect(evaluateWatch(makePayment({ memo: "7", memoType: "id" }), idRule).outcome).toBe(
+      "VERIFIED",
+    );
+    expect(evaluateWatch(makePayment({ memo: "8", memoType: "id" }), idRule).reasons).toEqual([
+      "MEMO_MISMATCH",
+    ]);
+    expect(evaluateWatch(makePayment({ memo: "7", memoType: "text" }), idRule).reasons).toEqual([
+      "MEMO_TYPE_MISMATCH",
+    ]);
 
     const hash = "AB".repeat(32);
-    const hashRule = makeRules({ memoRule: memoRule({ kind: "equals", value: hash, type: "hash" }) });
-    expect(evaluateWatch(makePayment({ memo: hash.toLowerCase(), memoType: "hash" }), hashRule).outcome).toBe("VERIFIED");
+    const hashRule = makeRules({
+      memoRule: memoRule({ kind: "equals", value: hash, type: "hash" }),
+    });
+    expect(
+      evaluateWatch(makePayment({ memo: hash.toLowerCase(), memoType: "hash" }), hashRule).outcome,
+    ).toBe("VERIFIED");
   });
 
   it("applies the memo rules: equals (trimmed), present, absent", () => {
-    const equals = makeRules({ memoRule: memoRule({ kind: "equals", value: "inv-9", type: "text" }) });
-    expect(evaluateWatch(makePayment({ memo: " inv-9 ", memoType: "text" }), equals).outcome).toBe("VERIFIED");
+    const equals = makeRules({
+      memoRule: memoRule({ kind: "equals", value: "inv-9", type: "text" }),
+    });
+    expect(evaluateWatch(makePayment({ memo: " inv-9 ", memoType: "text" }), equals).outcome).toBe(
+      "VERIFIED",
+    );
     expect(evaluateWatch(makePayment(), equals).reasons).toEqual(["MEMO_MISSING"]);
     const absent = makeRules({ memoRule: memoRule({ kind: "absent" }) });
-    expect(evaluateWatch(makePayment({ memo: "x", memoType: "text" }), absent).reasons).toEqual(["MEMO_NOT_ALLOWED"]);
+    expect(evaluateWatch(makePayment({ memo: "x", memoType: "text" }), absent).reasons).toEqual([
+      "MEMO_NOT_ALLOWED",
+    ]);
     expect(evaluateWatch(makePayment(), absent).outcome).toBe("VERIFIED");
   });
 
@@ -97,13 +130,17 @@ describe("evaluateWatch", () => {
     const memo = fc.oneof(
       fc.constant({ memo: null, memoType: "none" as const }),
       fc.string().map((m) => ({ memo: m, memoType: "text" as const })),
-      fc.bigInt({ min: 0n, max: 2n ** 64n - 1n }).map((m) => ({ memo: m.toString(), memoType: "id" as const })),
+      fc
+        .bigInt({ min: 0n, max: 2n ** 64n - 1n })
+        .map((m) => ({ memo: m.toString(), memoType: "id" as const })),
     );
     const amountRules = fc.oneof(
       fc.constant<AmountRule>({ kind: "any" }),
       stroops.map((s): AmountRule => ({ kind: "exact", stroops: s })),
       stroops.map((s): AmountRule => ({ kind: "min", stroops: s })),
-      fc.tuple(stroops, stroops).map(([a, b]): AmountRule => ({ kind: "range", min: a < b ? a : b, max: a < b ? b : a })),
+      fc
+        .tuple(stroops, stroops)
+        .map(([a, b]): AmountRule => ({ kind: "range", min: a < b ? a : b, max: a < b ? b : a })),
     );
     const memoRules = fc.oneof(
       fc.constantFrom<MemoRule>({ kind: "any" }, { kind: "present" }, { kind: "absent" }),
@@ -111,13 +148,20 @@ describe("evaluateWatch", () => {
       fc.string().map((v): MemoRule => ({ kind: "equals", value: v, type: "id" })),
     );
     fc.assert(
-      fc.property(stroops, memo, amountRules, memoRules, fc.boolean(), (amount, m, ar, mr, native) => {
-        const result = evaluateWatch(
-          makePayment({ amountStroops: amount, ...m, asset: native ? XLM : USDC }),
-          makeRules({ amountRule: ar, memoRule: mr }),
-        );
-        expect(result.outcome === "VERIFIED").toBe(result.reasons.length === 0);
-      }),
+      fc.property(
+        stroops,
+        memo,
+        amountRules,
+        memoRules,
+        fc.boolean(),
+        (amount, m, ar, mr, native) => {
+          const result = evaluateWatch(
+            makePayment({ amountStroops: amount, ...m, asset: native ? XLM : USDC }),
+            makeRules({ amountRule: ar, memoRule: mr }),
+          );
+          expect(result.outcome === "VERIFIED").toBe(result.reasons.length === 0);
+        },
+      ),
     );
   });
 });

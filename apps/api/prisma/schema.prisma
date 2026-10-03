@@ -64,6 +64,7 @@ model Endpoint {
   status              EndpointStatus @default(ACTIVE)
   consecutiveFailures Int            @default(0) // failed EVENTS in a row, not attempts
   disabledReason      String?
+  deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   watches             Watch[]

@@ -1,7 +1,8 @@
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
 import { createPrismaClient, type PrismaClient } from "../../src/db/prisma.js";
+import { createTestDb, type TestDb } from "../helpers/db.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { testEnv } from "../helpers/testEnv.js";
 
@@ -9,14 +10,16 @@ const env = testEnv();
 const logger = createLogger(env);
 
 describe("GET /health", () => {
+  let db: TestDb;
   let prisma: PrismaClient;
 
-  beforeAll(() => {
-    prisma = createPrismaClient(inject("databaseUrl"));
+  beforeAll(async () => {
+    db = await createTestDb();
+    prisma = db.prisma;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await db.cleanup();
   });
 
   it("returns 200 with DB status on a fresh database", async () => {
@@ -57,14 +60,16 @@ describe("GET /health", () => {
 });
 
 describe("app skeleton", () => {
+  let db: TestDb;
   let prisma: PrismaClient;
 
-  beforeAll(() => {
-    prisma = createPrismaClient(inject("databaseUrl"));
+  beforeAll(async () => {
+    db = await createTestDb();
+    prisma = db.prisma;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await db.cleanup();
   });
 
   it("generates a request ID and echoes it on the response", async () => {

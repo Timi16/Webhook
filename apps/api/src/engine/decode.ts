@@ -19,7 +19,8 @@ function decodeMemo(raw: unknown): { memo: string | null; memoType: MemoType } |
   if (raw === undefined || raw === null) return { memo: null, memoType: "none" };
   if (typeof raw === "string") return { memo: raw, memoType: "text" };
   if (typeof raw === "bigint") return { memo: raw.toString(), memoType: "id" };
-  if (raw instanceof Uint8Array) return { memo: Buffer.from(raw).toString("hex"), memoType: "hash" };
+  if (raw instanceof Uint8Array)
+    return { memo: Buffer.from(raw).toString("hex"), memoType: "hash" };
   return null;
 }
 
@@ -31,7 +32,10 @@ function decodeMemo(raw: unknown): { memo: string | null; memoType: MemoType } |
  * transaction memo: string -> text, u64 -> id, bytes -> hash. The two u64 cases cannot be
  * told apart from the event, so both surface as an ID memo.
  */
-export function decodeEvent(event: RpcEventLike, networkPassphrase: string): NormalizedPayment | null {
+export function decodeEvent(
+  event: RpcEventLike,
+  networkPassphrase: string,
+): NormalizedPayment | null {
   if (!event.inSuccessfulContractCall || event.contractId === undefined) return null;
 
   let topics: unknown[];
