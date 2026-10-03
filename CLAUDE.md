@@ -4,9 +4,12 @@ Stellar Testnet payment webhook service. Read everything in /docs before startin
 
 ## Current scope (agreed 3 Oct 2026)
 
-- Backend only for now: `apps/api` and `packages/shared`. No dashboard or docs site yet.
+- Backend only for now: `apps/api`, `packages/shared` and `scripts`. No dashboard or docs site yet.
 - Local development only. Skip server setup, CI deploy and anything else that needs the live server.
 - Package manager is pnpm. Where the docs say `npm run <script>`, use `pnpm <script>` from the repo root.
+- Keep going through the backend phases without stopping at each gate; report the gate results at the end.
+- Commits carry no Claude attribution.
+- Decisions made during the build are listed under "Implementation notes" in docs/Backend.md.
 
 ## Working rules
 
@@ -29,6 +32,8 @@ docker compose -f docker-compose.dev.yml up -d   # Postgres 16 on localhost:5433
 cp apps/api/.env.example apps/api/.env
 pnpm --filter @webhook/api db:migrate
 pnpm --filter @webhook/api dev                   # http://localhost:4000/health
+pnpm --filter @webhook/api dev:worker            # ingestion + delivery
+pnpm --filter @webhook/scripts scenario          # 20 real testnet payments, end to end
 ```
 
 Tests need Docker running: integration tests start their own Postgres with Testcontainers.

@@ -209,11 +209,12 @@ export function evaluateWatch(p: NormalizedPayment, w: ParsedWatch):
   { outcome: "VERIFIED" | "REJECTED"; reasons: ReasonCode[] };
 rpcEventSource.ts
 • Uses rpc.Server(STELLAR_RPC_URL).getEvents(): first call with startLedger, later calls with the returned paging cursor; limit 200.
-• Filter: type: "contract", contractIds = the Stellar Asset Contract ID of every asset used by an active watch (new Asset(code, issuer).contractId(NETWORK_PASSPHRASE); Asset.native() for XLM), topic 0 = transfer or mint.
-• RPC allows a limited number of filters and contract IDs per call. If the asset set is larger than fits, drop the contract filter, keep the topic filter, and filter by asset in memory.
-• Decode with scValToNative: topics give from, to and the asset string (USDC:G… or native); data gives the amount (i128) and, when present, to_muxed_id.
-• to_muxed_id carries either the destination's mux ID or the transaction memo. Map its type: string → text, u64 → id, bytes → hash (hex).
-• Day 2 spike decides one thing: if the event doesn't carry the memo in some case, decode.ts falls back to getTransaction(txHash) and reads the memo from the envelope. Cache per tx hash.
+• Filter: type: "contract", topic 0 = transfer or mint, destination topic = a watched wallet (one filter per wallet). Never filtered by asset contract ID: a wrong-asset or fake-issuer payment must still arrive so it can be recorded as REJECTED (W3).
+• RPC allows 5 filters per call. With more than 5 watched wallets, keep only the transfer/mint topic filter and filter by wallet in memory.
+• Decode with scValToNative: topics give from, to and the asset string (USDC:G… or native); data gives the amount (i128) and, when present, to_muxed_id. mint has 3 topics (to, asset); the issuer is the sender.
+• The decoder only trusts an event whose contractId is the Stellar Asset Contract of the asset it names. Any contract can emit a transfer event that claims to be USDC.
+• to_muxed_id carries either the destination's mux ID or the transaction memo. Map its type: string → text, u64 → id, bytes → hash (hex). A payment to an M-address therefore surfaces as an ID memo holding the mux ID (and replaces any transaction memo).
+• Spike result (3 Oct 2026, testnet): every classic payment, path payment, account creation, issuer mint and contract transfer produced one event with amount, asset and memo. Soroban transactions cannot carry a memo, so no getTransaction fallback is needed.
 ingestion.ts (main loop)
 loop forever:
   cursor = Cursor.load("rpc-events")
@@ -269,24 +270,30 @@ SET status = 'SENDING',
     "attemptCount" = "attemptCount" + 1,
     "updatedAt" = now()
 WHERE id IN (
-  SELECT d.id
-  FROM "Delivery" d
-  JOIN "Endpoint" e ON e.id = d."endpointId"
-  WHERE e.status <> 'DISABLED'
-    AND (
-      (d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= now())
-      OR (d.status = 'SENDING' AND d."leaseUntil" < now())   -- crashed mid-send
-    )
-    AND (
+  SELECT due.id
+  FROM "Endpoint" e
+  CROSS JOIN LATERAL (
+    SELECT d.id, d."nextAttemptAt"
+    FROM "Delivery" d
+    WHERE d."endpointId" = e.id
+      AND (
+        (d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= now())
+        OR (d.status = 'SENDING' AND d."leaseUntil" < now())   -- crashed mid-send
+      )
+    ORDER BY d."nextAttemptAt"
+    LIMIT GREATEST(0, 5 - (                                    -- this endpoint's free slots
       SELECT count(*) FROM "Delivery" s
-      WHERE s."endpointId" = d."endpointId"
+      WHERE s."endpointId" = e.id
         AND s.status = 'SENDING' AND s."leaseUntil" > now()
-    ) < 5
-  ORDER BY d."nextAttemptAt"
-  LIMIT $1                                               -- free slots, max 20
-  FOR UPDATE OF d SKIP LOCKED
+    ))
+    FOR UPDATE OF d SKIP LOCKED
+  ) due
+  WHERE e.status <> 'DISABLED'
+  ORDER BY due."nextAttemptAt"
+  LIMIT $1                                                     -- free slots, max 20
 )
-RETURNING *;
+RETURNING id, "eventId", "endpointId", "attemptCount";
+The per-endpoint limit is applied per endpoint (LATERAL … LIMIT), not as a filter on already-sending rows: a single claim would otherwise take up to 20 rows for one idle endpoint at once.
 Request format
 Header
 Value
@@ -522,6 +529,14 @@ ALERT_TELEGRAM_BOT_TOKEN / ALERT_TELEGRAM_CHAT_ID
 
 worker
 Optional; alerts are logged if absent
+EMAIL_FROM
+Webhook <onboarding@resend.dev>
+both
+Optional; sender for endpoint-disabled and password-reset emails
+ALLOW_INSECURE_WEBHOOK_TARGETS
+false
+both
+Local development only: allows http, any port and private IPs as webhook targets (the mock receiver). Boot fails if true in production
 LOG_LEVEL
 info
 both
@@ -552,7 +567,7 @@ Does
 scenario.ts
 Creates Friendbot accounts and trustlines, then runs every testnet scenario (normal, wrong asset, fake-issuer USDC, wrong amount, memo cases, path payment, M-address) and asserts results through the API. Also the live demo.
 mock-receiver.ts
-Local HTTPS receiver; per-request mode set by query or admin route: ok, 500, timeout, redirect, gone, slow, flaky:N
+Local receiver (plain http by default, so run the API and worker with ALLOW_INSECURE_WEBHOOK_TARGETS=true); per-request mode set by query or admin route: ok, 500, timeout, redirect, gone, slow, large, flaky:N
 chaos.sh
 Kills the worker mid-burst, points RPC at a dead host, stops Postgres for 60 s, then checks counts
 seed.ts
@@ -708,3 +723,16 @@ Chaos checks (before handover)
 • Point STELLAR_RPC_URL at a dead host for 5 min → lag alert fires → full catch-up after restore.
 • Stop Postgres for 60 s → API returns 503, worker backs off, nothing lost.
 • Mock receiver returns 500 for 10 min, then 200 → every event delivered; receiver sees duplicates only with the same Webhook-Id.
+Implementation notes
+Decisions made while building, where the spec was silent or needed a correction.
+• Webhook payload: { id, type, apiVersion, createdAt, data }. For payment events data holds payment (id, txHash, ledger, ledgerClosedAt, from, to, toMuxedId, memo, memoType, asset, amount, amountStroops), watch (id, label, walletAddress) and verification (outcome, reasons). Field names are camelCase, like the REST API.
+• Resuming a paused watch sets startLedger to the next ledger, so payments that arrived while it was paused stay ignored (otherwise reconciliation would match them after the resume).
+• Password reset tokens are stateless: an HMAC (SESSION_SECRET) over the developer ID, expiry and current password hash. They die as soon as the password changes.
+• The 5/min auth rate limit applies to the POST /auth routes that take credentials, not to GET /auth/me or logout.
+• Session cookies are Secure only when NODE_ENV=production, so the dashboard works over http://localhost in development.
+• The same transaction reaching us from RPC and from the Horizon backfill (different event IDs) is recorded once: the matcher skips a payment whose transaction hash already exists from the other source.
+• backfillHours (0–24) moves the watch's startLedger back and asks the worker to replay that wallet from Horizon. Payments already recorded for another watch on the same wallet are not re-matched.
+• consecutiveFailures only counts an event's 10th attempt. A resend that fails later goes straight back to FAILED without counting again.
+• An oversized response body records BODY_TOO_LARGE on the attempt, but the delivery outcome still follows the status code.
+• The ingestion heartbeat is also refreshed when a pass fails and backs off: an unreachable RPC raises the lag alert instead of restarting the worker every 60 s.
+• Rate limits on /v1: 300/min per developer after authentication, plus 60/min per IP counted only on 401s.

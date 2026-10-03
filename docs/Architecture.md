@@ -5,10 +5,10 @@ The API never talks to Stellar's event stream and the worker never serves HTTP; 
 Payment-to-webhook lifecycle
 A payment goes from ledger close to a delivered webhook in about 5–10 s, through two database transactions. If the process dies between any two steps, the work is either fully committed or fully redone.
 1. Ledger closes on testnet (about every 5 s).
-2. Worker polls getEvents every 2 s from the saved cursor, filtered to the Stellar Asset Contract IDs of the allowed assets and the topics transfer and mint.
+2. Worker polls getEvents every 2 s from the saved cursor, filtered to the topics transfer and mint with a watched wallet as the destination. It never filters by asset contract: a payment in the wrong asset or from a counterfeit issuer must still be seen so it can be REJECTED.
 3. Decode and filter. Each event becomes a NormalizedPayment. Anything whose destination (base G address) isn't in the in-memory watched set is dropped.
 4. Transaction A (matcher):
-    1. INSERT ChainPayment … ON CONFLICT (eventId) DO NOTHING. If it already existed, skip the rest for that payment.
+    1. If no active Watch on that wallet has startLedger <= ledger, record nothing. Otherwise INSERT ChainPayment … ON CONFLICT (eventId) DO NOTHING. If it already existed, skip the rest for that payment.
     2. For every active Watch on that wallet with startLedger <= ledger: run evaluateWatch and insert a PaymentMatch (unique per payment + watch).
     3. For each VERIFIED match (and each REJECTED match when the watch opted in to payment.rejected): insert a WebhookEvent (unique on matchId) and a Delivery row (PENDING, due now).
     4. Advance the Cursor.
@@ -291,6 +291,8 @@ Notes for implementation:
 • Watch.assets, amountRule and memoRule are validated with the shared Zod schemas on every write and parsed with them on every read; never trust raw JSON from the database.
 • Soft-deleted watches (deletedAt set) stop matching immediately but keep their history.
 • Resend reuses the same Delivery row (reset to PENDING), so the Webhook-Id never changes for an event.
+• Endpoints are soft-deleted too (deletedAt set, status DISABLED, disabledReason DELETED): deliveries and attempts keep their history, and the dispatcher never claims for them.
+• Endpoint.description and Endpoint.deletedAt were added during the build (additive migrations) because the API contract needs them.
 Delivery state machine
 Each Delivery row moves through six states; only the dispatcher and the Resend/Replay/Delete controls may change it, and every change happens in a transaction.
 Two transitions aren't drawn: a SENDING row whose 60 s lease expires is claimed again as if due (crash recovery), and Resend also works on a DELIVERED event. Deleting an endpoint cancels its PENDING and RETRYING rows too.
