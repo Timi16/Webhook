@@ -45,7 +45,17 @@ function check(ok: boolean, message: string): void {
 // Chaos option: the receiver answers 500 for this long after the first payment, then recovers.
 const RECEIVER_FAIL_SECONDS = parseInt(process.env.RECEIVER_FAIL_SECONDS ?? "0", 10);
 
-const receiver = await startMockReceiver({ port: RECEIVER_PORT });
+// Signatures are checked as each webhook arrives: the timestamp tolerance is 5 minutes, so
+// checking them all at the end would wrongly fail anything delivered early in a long run.
+let endpointSecret = "";
+const badSignatures: string[] = [];
+const receiver = await startMockReceiver({
+  port: RECEIVER_PORT,
+  onRequest: (r) => {
+    if (!verifyWebhook(endpointSecret, r.headers, r.body))
+      badSignatures.push(r.headers["webhook-id"] ?? "?");
+  },
+});
 console.log(`mock receiver on ${receiver.url}`);
 
 console.log("creating developer, endpoint and testnet accounts...");
@@ -60,6 +70,7 @@ const { endpoint, secret } = await api.post<{ endpoint: { id: string }; secret: 
     description: "scenario mock receiver",
   },
 );
+endpointSecret = secret;
 
 const payer = Keypair.random();
 const wallet = Keypair.random();
@@ -274,8 +285,8 @@ check(
   `receiver got ${receivedIds.size} distinct webhooks in ${receiver.requests.length} requests (duplicates only ever reuse a Webhook-Id)`,
 );
 check(
-  receiver.requests.every((r) => verifyWebhook(secret, r.headers, r.body)),
-  "every webhook signature verifies with the endpoint secret",
+  badSignatures.length === 0 && receiver.requests.length > 0,
+  `every webhook signature verified on arrival (${receiver.requests.length} requests)`,
 );
 const types = receiver.requests.map((r) => (JSON.parse(r.body) as { type: string }).type);
 const expectedRejected = cases.filter((c) => c.expect === "REJECTED").length;

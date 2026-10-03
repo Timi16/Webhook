@@ -197,6 +197,7 @@ model ChainPayment {
 
   @@index([toAddress, ledger])
   @@index([txHash])
+  @@index([innerTxHash])
 }
 
 enum MatchOutcome {

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
 import { createPrismaClient, type PrismaClient } from "../../src/db/prisma.js";
 import { createTestDb, type TestDb } from "../helpers/db.js";
+import { seedDeveloper, seedEndpoint } from "../helpers/seed.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { testEnv } from "../helpers/testEnv.js";
 
@@ -44,6 +45,30 @@ describe("GET /health", () => {
       expect(res.body.lagSeconds).toBeGreaterThanOrEqual(0);
     } finally {
       await prisma.cursor.delete({ where: { name: "rpc-events" } });
+    }
+  });
+
+  it("counts due deliveries, but not ones parked behind a disabled endpoint", async () => {
+    const developer = await seedDeveloper(prisma);
+    const live = await seedEndpoint(prisma, developer.id);
+    const disabled = await seedEndpoint(prisma, developer.id, { status: "DISABLED" });
+    const past = new Date(Date.now() - 60_000);
+    for (const [index, endpointId] of [live.id, disabled.id, disabled.id].entries()) {
+      await prisma.webhookEvent.create({
+        data: {
+          id: `evt_health_${index}`,
+          developerId: developer.id,
+          type: "test.ping",
+          payload: {},
+          deliveries: { create: { endpointId, nextAttemptAt: past } },
+        },
+      });
+    }
+    try {
+      const res = await request(buildApp({ env, logger, prisma })).get("/health");
+      expect(res.body.dueDeliveries).toBe(1);
+    } finally {
+      await prisma.$executeRaw`TRUNCATE "Developer" CASCADE`;
     }
   });
 

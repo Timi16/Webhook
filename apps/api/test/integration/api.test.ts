@@ -299,6 +299,35 @@ describe("API keys", () => {
     expect(await prisma.developer.count({ where: { email: "race@example.com" } })).toBe(1);
   });
 
+  it("A1: a secret key pasted into a query string is rejected and never reaches the logs", async () => {
+    const secret = Keypair.random().secret();
+    for (const path of ["/v1/watches", "/v1/payments"]) {
+      const res = await request(t.app).get(`${path}?wallet=${secret}`).set(bearer(aliceKey));
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("SECRET_KEY_REJECTED");
+    }
+    expect(t.logs()).toContain('"url":"/v1/payments"'); // the path is logged, the query string is not
+    expect(t.logs()).not.toContain(secret);
+  });
+
+  it("refuses NUL characters with 400 instead of failing in the database", async () => {
+    const endpoint = await request(t.app)
+      .post("/v1/endpoints")
+      .set(bearer(aliceKey))
+      .send({ url: "https://nul.example.com", description: "a\u0000b" });
+    expect(endpoint.status).toBe(400);
+    expect(endpoint.body.error.details).toEqual([{ path: "body", issue: "invalid_character" }]);
+    const key = await request(t.app)
+      .post("/v1/api-keys")
+      .set("Cookie", alice.cookie)
+      .set("Origin", ORIGIN)
+      .send({ name: "\u0000" });
+    expect(key.status).toBe(400);
+    expect((await request(t.app).get("/v1/events?watchId=%00").set(bearer(aliceKey))).status).toBe(
+      400,
+    );
+  });
+
   it("rejects missing, malformed and unknown credentials", async () => {
     expect((await request(t.app).get("/v1/watches")).status).toBe(401);
     expect((await request(t.app).get("/v1/watches").set(bearer("whk_test_nope"))).status).toBe(401);

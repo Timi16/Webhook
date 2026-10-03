@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { toStroops } from "../../lib/amount.js";
 import { XLM } from "../../lib/stellar.js";
+import { sanitizeMemoText } from "../decode.js";
 import type { MemoType, NormalizedPayment } from "../types.js";
 
 const PAGE_SIZE = 200;
@@ -59,7 +60,7 @@ function memoOf(record: HorizonRecord): {
   if (!tx?.memo) return { memo: null, memoType: "none" };
   switch (tx.memo_type) {
     case "text":
-      return { memo: tx.memo, memoType: "text" };
+      return { memo: sanitizeMemoText(tx.memo), memoType: "text" };
     case "id":
       return { memo: tx.memo, memoType: "id" };
     case "hash":

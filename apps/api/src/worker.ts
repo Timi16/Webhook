@@ -55,14 +55,39 @@ await watchedSet.reload();
 watchedSet.start(listener);
 listener.on(CHANNELS.deliveries, () => dispatcher.wake());
 // A watch created with backfillHours: replay that wallet's history up to where the live loop is.
+// They run one at a time from a bounded queue, so a burst of them cannot starve the live loop
+// of database connections or hammer Horizon.
+const MAX_QUEUED_BACKFILLS = 100;
+const backfillQueue: { wallet: string; fromLedger: number }[] = [];
+let backfilling = false;
+
+async function drainBackfills(): Promise<void> {
+  if (backfilling) return;
+  backfilling = true;
+  try {
+    for (let job = backfillQueue.shift(); job; job = backfillQueue.shift()) {
+      try {
+        await watchedSet.reload();
+        const cursor = await loadCursor(prisma);
+        if (cursor) await ingestion.backfillWallet(job.wallet, job.fromLedger, cursor.ledger + 1);
+      } catch (err) {
+        logger.error({ err, wallet: job.wallet }, "watch backfill failed");
+      }
+    }
+  } finally {
+    backfilling = false;
+  }
+}
+
 listener.on(CHANNELS.watchBackfill, (payload) => {
   const { wallet, fromLedger } = payload;
   if (typeof wallet !== "string" || typeof fromLedger !== "number") return;
-  void (async () => {
-    await watchedSet.reload();
-    const cursor = await loadCursor(prisma);
-    if (cursor) await ingestion.backfillWallet(wallet, fromLedger, cursor.ledger + 1);
-  })().catch((err: unknown) => logger.error({ err, wallet }, "watch backfill failed"));
+  if (backfillQueue.length >= MAX_QUEUED_BACKFILLS) {
+    logger.warn({ wallet }, "backfill queue is full, dropping request");
+    return;
+  }
+  backfillQueue.push({ wallet, fromLedger });
+  void drainBackfills();
 });
 await listener.start();
 

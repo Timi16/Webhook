@@ -86,7 +86,7 @@ case "${1:-}" in
     SECONDS_DOWN="${2:-60}"
     start_worker
     start_scenario
-    wait_for_log "sent 5/20" 300
+    wait_for_log "sent  5/20" 300
     echo "chaos: stopping Postgres for $SECONDS_DOWN s"
     docker compose -f "$ROOT/docker-compose.dev.yml" stop postgres >/dev/null
     sleep 5

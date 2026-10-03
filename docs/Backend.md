@@ -736,3 +736,17 @@ Decisions made while building, where the spec was silent or needed a correction.
 • An oversized response body records BODY_TOO_LARGE on the attempt, but the delivery outcome still follows the status code.
 • The ingestion heartbeat is also refreshed when a pass fails and backs off: an unreachable RPC raises the lag alert instead of restarting the worker every 60 s.
 • Rate limits on /v1: 300/min per developer after authentication, plus 60/min per IP counted only on 401s.
+• Text memos are stored with NUL characters removed (Postgres cannot store them, and one such memo would otherwise fail every ingestion batch). Memo bytes that are not exactly 32 long are a non-UTF-8 text memo, never a hash.
+• API input containing a NUL character is refused with 400 VALIDATION_FAILED (invalid_character).
+• Request logs hold the path only, never the query string, and the Set-Cookie response header is redacted. ?wallet= filters are validated as addresses, so a pasted secret key gets SECRET_KEY_REJECTED.
+• After a testnet reset, every watch whose startLedger is above the new tip is moved to the new tip, so watches keep matching on the new chain.
+• Live streams are capped at 5 per developer (the oldest is closed) and end when their session does: on logout, and for all other sessions on a password change or reset.
+• Watch backfills run one at a time from a queue of at most 100; the cross-source duplicate check holds a per-transaction advisory lock so two sources cannot insert the same payment at once.
+• dueDeliveries (health, alerts) excludes deliveries waiting behind a DISABLED endpoint.
+Known limitations
+• Delivery slots are shared: 20 sends overall, 5 per endpoint. A developer with four or more slow endpoints can occupy all 20 slots and delay other developers' webhooks until those endpoints fail out. A per-developer cap would fix it; it changes the claim query, so it is left as a design decision.
+• A delivery re-claimed after a crashed send uses up an attempt number without an attempt row. If the crash happens on attempt 10, the retry is attempt 11 and does not count towards the 20-failed-events rule.
+• Rotating a secret twice within 24 h drops the original secret immediately; only the latest previous secret is kept.
+• After a testnet reset, a new payment could reuse the event ID of a payment recorded at the same ledger position on the old network and be skipped as a duplicate.
+• If Horizon is unreachable while the worker is lagging, a new watch's startLedger can be earlier than "now", so it may match payments made shortly before it was created.
+• There is no limit on watches or endpoints per developer.

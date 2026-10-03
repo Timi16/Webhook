@@ -20,7 +20,12 @@ export function createHealthRepo(prisma: PrismaClient): HealthRepo {
           select: { ledger: true, updatedAt: true },
         }),
         prisma.delivery.count({
-          where: { status: { in: ["PENDING", "RETRYING"] }, nextAttemptAt: { lte: now } },
+          where: {
+            status: { in: ["PENDING", "RETRYING"] },
+            nextAttemptAt: { lte: now },
+            // Deliveries parked behind a DISABLED endpoint are never claimed, so they are not "due".
+            endpoint: { status: { not: "DISABLED" } },
+          },
         }),
       ]);
       return { cursor, dueDeliveries };

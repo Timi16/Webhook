@@ -48,6 +48,9 @@ function assertStrongPassword(password: string, field: string): void {
 export interface AuthServiceOptions {
   /** Base of the growing per-account delay after failed logins. 0 disables it (tests). */
   loginDelayMs?: number;
+  /** Told when sessions stop being valid, so anything tied to them (live streams) can end too. */
+  onSessionEnded?: (sessionId: string) => void;
+  onSessionsEnded?: (developerId: string, exceptSessionId?: string) => void;
 }
 
 export function createAuthService(
@@ -124,13 +127,18 @@ export function createAuthService(
       }
       failures.delete(input.email);
       // Sessions are rotated on login; expired ones are swept at the same time.
-      if (previousSessionId) await repo.deleteSession(previousSessionId);
+      if (previousSessionId) {
+        await repo.deleteSession(previousSessionId);
+        options.onSessionEnded?.(previousSessionId);
+      }
       await repo.deleteExpiredSessions();
       return { developer: toPublic(developer), token: await startSession(developer.id, meta) };
     },
 
     async logout(sessionId: string | undefined): Promise<void> {
-      if (sessionId) await repo.deleteSession(sessionId);
+      if (!sessionId) return;
+      await repo.deleteSession(sessionId);
+      options.onSessionEnded?.(sessionId);
     },
 
     async me(developerId: string) {
@@ -154,6 +162,7 @@ export function createAuthService(
       assertStrongPassword(input.newPassword, "newPassword");
       await repo.setPassword(developerId, await hashPassword(input.newPassword));
       await repo.deleteSessions(developerId, sessionId);
+      options.onSessionsEnded?.(developerId, sessionId);
     },
 
     /** Always succeeds from the caller's point of view (no account enumeration). */
@@ -193,6 +202,7 @@ export function createAuthService(
       assertStrongPassword(input.newPassword, "newPassword");
       await repo.setPassword(developer.id, await hashPassword(input.newPassword));
       await repo.deleteSessions(developer.id);
+      options.onSessionsEnded?.(developer.id);
     },
   };
 }

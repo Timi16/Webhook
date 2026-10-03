@@ -15,12 +15,23 @@ export interface RpcEventLike {
   value: xdr.ScVal;
 }
 
+/**
+ * A text memo is 28 arbitrary bytes chosen by the payer. Postgres cannot store NUL in text or
+ * JSON, so one such memo would fail the whole ingestion batch on every retry; strip it here.
+ */
+export function sanitizeMemoText(text: string): string {
+  return text.replaceAll("\u0000", "");
+}
+
 function decodeMemo(raw: unknown): { memo: string | null; memoType: MemoType } | null {
   if (raw === undefined || raw === null) return { memo: null, memoType: "none" };
-  if (typeof raw === "string") return { memo: raw, memoType: "text" };
+  if (typeof raw === "string") return { memo: sanitizeMemoText(raw), memoType: "text" };
   if (typeof raw === "bigint") return { memo: raw.toString(), memoType: "id" };
-  if (raw instanceof Uint8Array)
-    return { memo: Buffer.from(raw).toString("hex"), memoType: "hash" };
+  if (raw instanceof Uint8Array) {
+    // Hash memos are exactly 32 bytes. Anything else is a text memo that was not valid UTF-8.
+    if (raw.length === 32) return { memo: Buffer.from(raw).toString("hex"), memoType: "hash" };
+    return { memo: sanitizeMemoText(Buffer.from(raw).toString("utf8")), memoType: "text" };
+  }
   return null;
 }
 

@@ -38,6 +38,25 @@ describe("StreamHub", () => {
     expect(other.ended).toBe(true);
   });
 
+  it("ends streams with their session: one on logout, all others on a password change", () => {
+    const hub = new StreamHub();
+    const open = (sessionId: string) => {
+      const res = new FakeResponse();
+      hub.add("dev-1", res as unknown as Response, sessionId);
+      return res;
+    };
+    const [a, b, c] = [open("s-a"), open("s-b"), open("s-c")];
+    const other = connect(hub, "dev-2");
+
+    hub.closeSession("s-a");
+    expect([a.ended, b.ended, c.ended]).toEqual([true, false, false]);
+    hub.closeDeveloper("dev-1", "s-b");
+    expect([b.ended, c.ended, other.ended]).toEqual([false, true, false]);
+    hub.closeDeveloper("dev-1");
+    expect(b.ended).toBe(true);
+    hub.closeAll();
+  });
+
   it("ignores notifications without a developer or on channels that are not streamed", () => {
     const hub = new StreamHub();
     const res = connect(hub, "dev-1");

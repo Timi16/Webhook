@@ -84,6 +84,31 @@ describe("decodeEvent", () => {
     expect(decode(SPIKE.memoHash)).toMatchObject({ memo: "ab".repeat(32), memoType: "hash" });
   });
 
+  it("strips NUL from text memos, which Postgres cannot store and would wedge ingestion", () => {
+    const value = xdr.ScVal.scvMap([
+      new xdr.ScMapEntry({ key: symbol("amount"), val: i128(5n) }),
+      new xdr.ScMapEntry({ key: symbol("to_muxed_id"), val: text("a\u0000b\u0000") }),
+    ]);
+    expect(decodeEvent(transferEvent({ value }), PASSPHRASE)).toMatchObject({
+      memo: "ab",
+      memoType: "text",
+    });
+  });
+
+  it("treats memo bytes that are not 32 long as a (non-UTF-8) text memo, never as a hash", () => {
+    const value = xdr.ScVal.scvMap([
+      new xdr.ScMapEntry({ key: symbol("amount"), val: i128(5n) }),
+      new xdr.ScMapEntry({
+        key: symbol("to_muxed_id"),
+        val: xdr.ScVal.scvBytes(Buffer.from([0x68, 0x69, 0x00, 0xff])),
+      }),
+    ]);
+    const payment = decodeEvent(transferEvent({ value }), PASSPHRASE);
+    expect(payment?.memoType).toBe("text");
+    expect(payment?.memo).toMatch(/^hi/);
+    expect(payment?.memo).not.toContain("\u0000");
+  });
+
   it("W10: M-address destination arrives on the base wallet with the mux ID as an ID memo", () => {
     const payment = decodeEvent(transferEvent({ value: fromSpike(SPIKE.muxedDest) }), PASSPHRASE);
     expect(payment).toMatchObject({ to, memo: "42", memoType: "id", amountStroops: 50_000_000n });

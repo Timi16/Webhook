@@ -25,7 +25,10 @@ export async function processPayment(
   watches: ParsedWatch[],
   now: Date = new Date(),
 ): Promise<MatchResult> {
-  // The same transaction can reach us from RPC and from the Horizon backfill under different event IDs.
+  // The same transaction can reach us from RPC and from the Horizon backfill under different event
+  // IDs, possibly at the same moment (reconciliation vs a watch backfill). Serialise per tx hash
+  // so the check below and the insert cannot interleave.
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${p.innerTxHash ?? p.txHash}))::text`;
   const hashes = p.innerTxHash ? [p.txHash, p.innerTxHash] : [p.txHash];
   const fromOtherSource = await tx.chainPayment.findFirst({
     where: {

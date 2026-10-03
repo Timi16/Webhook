@@ -6,6 +6,9 @@ import { newEventId } from "../lib/ids.js";
 import type { Logger } from "../lib/logger.js";
 import { RPC_CURSOR_NAME } from "./cursor.js";
 
+// One event and delivery per active endpoint: far more work than Prisma's default 5 s allows for.
+const RESET_TX_OPTIONS = { timeout: 120_000, maxWait: 10_000 };
+
 export interface NetworkResetDeps {
   prisma: PrismaClient;
   networkPassphrase: string;
@@ -66,7 +69,7 @@ export async function handleNetworkReset(
     }
     if (endpoints.length > 0) await notify(tx, CHANNELS.deliveries);
     return endpoints.length;
-  });
+  }, RESET_TX_OPTIONS);
 
   deps.logger.warn({ tip, notified }, "testnet reset detected, cursor moved to the new tip");
   await deps.alert(

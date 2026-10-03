@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { walletAddressSchema } from "./watch.js";
 
 export const paginationQuery = {
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -9,7 +10,7 @@ const isoDate = z.iso.datetime({ offset: true });
 
 export const listPaymentsQuerySchema = z.strictObject({
   watchId: z.string().min(1).max(64).optional(),
-  wallet: z.string().min(1).max(64).optional(),
+  wallet: walletAddressSchema.optional(),
   outcome: z.enum(["VERIFIED", "REJECTED"]).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
@@ -35,7 +36,7 @@ export const listEventsQuerySchema = z.strictObject({
 });
 
 export const listWatchesQuerySchema = z.strictObject({
-  wallet: z.string().min(1).max(64).optional(),
+  wallet: walletAddressSchema.optional(),
   active: z.enum(["true", "false"]).optional(),
 });
 

@@ -48,8 +48,25 @@ export interface ApiDeps {
   apiLimit: RequestHandler;
 }
 
+/** Postgres cannot store NUL in text or JSON columns. */
+function containsNul(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("\u0000");
+  if (Array.isArray(value)) return value.some(containsNul);
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value).some(
+      ([key, inner]) => key.includes("\u0000") || containsNul(inner),
+    );
+  }
+  return false;
+}
+
 function parse(schema: z.ZodType | undefined, data: unknown, where: string): unknown {
   if (!schema) return undefined;
+  if (containsNul(data)) {
+    throw new AppError("VALIDATION_FAILED", `${where}: invalid_character`, {
+      details: [{ path: where, issue: "invalid_character" }],
+    });
+  }
   const result = schema.safeParse(data ?? {});
   if (result.success) return result.data;
 

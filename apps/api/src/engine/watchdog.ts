@@ -66,7 +66,12 @@ export class Watchdog {
 
   private async checkDeliveries(now: number): Promise<void> {
     const due = await this.deps.prisma.delivery.count({
-      where: { status: { in: ["PENDING", "RETRYING"] }, nextAttemptAt: { lte: new Date(now) } },
+      where: {
+        status: { in: ["PENDING", "RETRYING"] },
+        nextAttemptAt: { lte: new Date(now) },
+        // Deliveries parked behind a DISABLED endpoint are never claimed, so they are not "due".
+        endpoint: { status: { not: "DISABLED" } },
+      },
     });
     if (due > MAX_DUE_DELIVERIES)
       await this.alertOnce("due", now, `${due} deliveries are due and waiting.`);

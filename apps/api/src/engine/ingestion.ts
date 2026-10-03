@@ -113,7 +113,9 @@ export class Ingestion {
     toLedgerExclusive: number,
   ): Promise<void> {
     const { prisma, backfill, watchedSet } = this.deps;
+    this.heartbeat = Date.now();
     for await (const page of backfill.paymentsForWallet(wallet, fromLedger, toLedgerExclusive)) {
+      this.heartbeat = Date.now(); // each page is progress; the watchdog must not restart us mid-backfill
       await prisma.$transaction(
         async (tx) => {
           for (const p of page) await processPayment(tx, p, watchedSet.get(p.to));

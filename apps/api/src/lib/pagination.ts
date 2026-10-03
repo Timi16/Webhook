@@ -21,6 +21,7 @@ export function decodeCursor(raw: string | undefined): PageCursor | undefined {
     const [createdAt, id] = cursorSchema.parse(
       JSON.parse(Buffer.from(raw, "base64url").toString("utf8")),
     );
+    if (id.includes("\u0000")) throw new Error("invalid id");
     return { createdAt: new Date(createdAt), id };
   } catch {
     throw new AppError("VALIDATION_FAILED", "cursor: invalid_cursor", {

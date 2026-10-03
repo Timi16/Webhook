@@ -14,6 +14,7 @@ const EVENT_NAMES: Partial<Record<Channel, string>> = {
 /** The API process LISTENs once and fans notifications out to connected clients by developerId. */
 export class StreamHub {
   private readonly clients = new Map<string, Set<Response>>();
+  private readonly sessions = new WeakMap<Response, string>();
   private readonly ping: NodeJS.Timeout;
 
   constructor() {
@@ -39,7 +40,8 @@ export class StreamHub {
     for (const res of this.clients.get(developerId) ?? []) res.write(frame);
   }
 
-  add(developerId: string, res: Response): void {
+  add(developerId: string, res: Response, sessionId?: string): void {
+    if (sessionId) this.sessions.set(res, sessionId);
     const set = this.clients.get(developerId) ?? new Set<Response>();
     // A few tabs are fine; beyond that the oldest stream is closed (the browser reconnects if it is still open).
     while (set.size >= MAX_STREAMS_PER_DEVELOPER) {
@@ -54,6 +56,20 @@ export class StreamHub {
       set.delete(res);
       if (set.size === 0) this.clients.delete(developerId);
     });
+  }
+
+  /** Ends the streams opened with one session (logout, login rotation). */
+  closeSession(sessionId: string): void {
+    for (const set of this.clients.values()) {
+      for (const res of [...set]) if (this.sessions.get(res) === sessionId) res.end();
+    }
+  }
+
+  /** Ends a developer's streams, optionally keeping one session's (password change or reset). */
+  closeDeveloper(developerId: string, exceptSessionId?: string): void {
+    for (const res of [...(this.clients.get(developerId) ?? [])]) {
+      if (exceptSessionId === undefined || this.sessions.get(res) !== exceptSessionId) res.end();
+    }
   }
 
   /** Ends every stream (graceful shutdown). */

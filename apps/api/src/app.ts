@@ -68,7 +68,20 @@ export function buildApp(deps: AppDeps): Express {
   app.disable("x-powered-by");
 
   app.use(requestId);
-  app.use(pinoHttp({ logger, genReqId: (req) => req.id }));
+  app.use(
+    pinoHttp({
+      logger,
+      genReqId: (req) => req.id,
+      serializers: {
+        // Log the path only: query strings are developer input and may hold a pasted secret key.
+        req(req: { url?: string; query?: unknown }) {
+          if (typeof req.url === "string") req.url = req.url.split("?")[0];
+          delete req.query;
+          return req;
+        },
+      },
+    }),
+  );
   app.use(
     helmet({
       strictTransportSecurity: { maxAge: 31_536_000, includeSubDomains: true },
@@ -110,6 +123,8 @@ export function buildApp(deps: AppDeps): Express {
       api,
       createAuthService(createAuthRepo(prisma), env, mailer, {
         ...(deps.loginDelayMs !== undefined ? { loginDelayMs: deps.loginDelayMs } : {}),
+        onSessionEnded: (sessionId) => hub.closeSession(sessionId),
+        onSessionsEnded: (developerId, except) => hub.closeDeveloper(developerId, except),
       }),
       env,
       { authLimit: limiters.auth, requireOrigin: originGuard },

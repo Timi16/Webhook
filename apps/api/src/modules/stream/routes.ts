@@ -23,7 +23,7 @@ export function createStreamRouter(api: Api, hub: StreamHub): Router {
       });
       res.flushHeaders();
       res.write(": connected\n\n");
-      hub.add(auth.developerId, res);
+      hub.add(auth.developerId, res, auth.sessionId);
     },
   );
 
