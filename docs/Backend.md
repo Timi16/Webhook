@@ -261,39 +261,51 @@ Supporting loops
 • networkReset.ts: set the cursor to the new tip, store lastNetworkResetAt, create a system.network_reset event for every active endpoint, alert.
 • horizonBackfill.ts: for each watched wallet, page /accounts/{id}/payments?join=transactions&order=asc from the gap start; map records to NormalizedPayment with source: "horizon" and an eventId derived from the operation ID, so live and backfilled rows never collide.
 Dispatcher (Deliverable 2)
-The dispatcher runs in the worker process, claims due deliveries from Postgres, sends each one through the SSRF-safe client, and records the result. It holds at most 20 sends in flight overall and 5 per endpoint.
+The dispatcher runs in the worker process, claims due deliveries from Postgres, sends each one through the SSRF-safe client, and records the result. It holds at most 20 sends in flight overall, 10 per developer and 5 per endpoint.
 Claiming
 Wakes on LISTEN deliveries, and polls every 1 s as a fallback.
 UPDATE "Delivery"
 SET status = 'SENDING',
     "leaseUntil" = now() + interval '60 seconds',
-    "attemptCount" = "attemptCount" + 1,
+    "attemptCount" = "attemptCount" + CASE WHEN status = 'SENDING' THEN 0 ELSE 1 END,
     "updatedAt" = now()
 WHERE id IN (
   SELECT due.id
-  FROM "Endpoint" e
+  FROM "Developer" dev
   CROSS JOIN LATERAL (
-    SELECT d.id, d."nextAttemptAt"
-    FROM "Delivery" d
-    WHERE d."endpointId" = e.id
-      AND (
-        (d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= now())
-        OR (d.status = 'SENDING' AND d."leaseUntil" < now())   -- crashed mid-send
-      )
-    ORDER BY d."nextAttemptAt"
-    LIMIT GREATEST(0, 5 - (                                    -- this endpoint's free slots
+    SELECT per_endpoint.id, per_endpoint."nextAttemptAt"
+    FROM "Endpoint" e
+    CROSS JOIN LATERAL (
+      SELECT d.id, d."nextAttemptAt"
+      FROM "Delivery" d
+      WHERE d."endpointId" = e.id
+        AND (
+          (d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= now())
+          OR (d.status = 'SENDING' AND d."leaseUntil" < now())   -- crashed mid-send
+        )
+      ORDER BY d."nextAttemptAt"
+      LIMIT GREATEST(0, 5 - (                                    -- this endpoint's free slots
+        SELECT count(*) FROM "Delivery" s
+        WHERE s."endpointId" = e.id
+          AND s.status = 'SENDING' AND s."leaseUntil" > now()
+      ))
+      FOR UPDATE OF d SKIP LOCKED
+    ) per_endpoint
+    WHERE e."developerId" = dev.id AND e.status <> 'DISABLED'
+    ORDER BY per_endpoint."nextAttemptAt"
+    LIMIT GREATEST(0, 10 - (                                     -- this developer's free slots
       SELECT count(*) FROM "Delivery" s
-      WHERE s."endpointId" = e.id
+      JOIN "Endpoint" se ON se.id = s."endpointId"
+      WHERE se."developerId" = dev.id
         AND s.status = 'SENDING' AND s."leaseUntil" > now()
     ))
-    FOR UPDATE OF d SKIP LOCKED
   ) due
-  WHERE e.status <> 'DISABLED'
   ORDER BY due."nextAttemptAt"
-  LIMIT $1                                                     -- free slots, max 20
+  LIMIT $1                                                       -- free slots, max 20
 )
 RETURNING id, "eventId", "endpointId", "attemptCount";
-The per-endpoint limit is applied per endpoint (LATERAL … LIMIT), not as a filter on already-sending rows: a single claim would otherwise take up to 20 rows for one idle endpoint at once.
+Limits are applied as LATERAL … LIMIT per endpoint (5) and per developer (10), not as a filter on already-sending rows: a single claim would otherwise take up to 20 rows for one idle endpoint, and one developer with several slow endpoints could hold every slot.
+A row re-claimed after an expired lease keeps its attempt number: nothing was recorded for the crashed send, so it is the same attempt again. Webhook-Attempt and the 10-attempt limit therefore count real, recorded attempts.
 Request format
 Header
 Value
@@ -340,7 +352,7 @@ Controls
 • Resend (POST /v1/events/:id/resend): sets the event's deliveries to PENDING, due now. If one is currently SENDING with a live lease → 409 CONFLICT ("already sending"). Attempt numbering continues.
 • Test webhook (POST /v1/endpoints/:id/test): creates a test.ping event + delivery, waits up to 12 s for the first attempt, and returns its result inline.
 • Replay (POST /v1/endpoints/:id/replay with since): resets up to 1,000 FAILED deliveries since that time to PENDING.
-• Rotate secret: new secret becomes current; old one moves to prevSecretEnc with prevSecretUntil = now + 24 h; both signatures sent until then.
+• Rotate secret: new secret becomes current; old one moves to prevSecretEnc with prevSecretUntil = now + 24 h; both signatures sent until then. Rotating again inside the window keeps the earlier secrets valid until their own deadlines (up to 3 previous secrets, stored as a JSON list in prevSecretEnc).
 • Re-enable endpoint: DISABLED → ACTIVE, consecutiveFailures = 0; nothing is replayed automatically.
 • Delete endpoint: 409 if active watches use it; otherwise its unfinished deliveries become CANCELLED.
 • Emails use Resend's API if RESEND_API_KEY is set; otherwise they are logged only.
@@ -743,10 +755,12 @@ Decisions made while building, where the spec was silent or needed a correction.
 • Live streams are capped at 5 per developer (the oldest is closed) and end when their session does: on logout, and for all other sessions on a password change or reset.
 • Watch backfills run one at a time from a queue of at most 100; the cross-source duplicate check holds a per-transaction advisory lock so two sources cannot insert the same payment at once.
 • dueDeliveries (health, alerts) excludes deliveries waiting behind a DISABLED endpoint.
+• Event IDs recorded after a testnet reset are prefixed with r<reset time>-, because ledger positions (and so raw event IDs) start over on the new network.
+• A transfer whose sender is the watched wallet itself (for example a path-payment swap) is not a payment received and is ignored.
+• Creating or resuming a watch needs the current ledger. Horizon's tip is used; if Horizon is down, the worker's cursor is extrapolated by its age at 6 s per ledger (never ahead of the real tip); if neither is available the request gets 503.
+• Per-developer limits: 20 endpoints, 100 watches, 20 active API keys (409 CONFLICT beyond that). Deleted and revoked ones do not count.
 Known limitations
-• Delivery slots are shared: 20 sends overall, 5 per endpoint. A developer with four or more slow endpoints can occupy all 20 slots and delay other developers' webhooks until those endpoints fail out. A per-developer cap would fix it; it changes the claim query, so it is left as a design decision.
-• A delivery re-claimed after a crashed send uses up an attempt number without an attempt row. If the crash happens on attempt 10, the retry is attempt 11 and does not count towards the 20-failed-events rule.
-• Rotating a secret twice within 24 h drops the original secret immediately; only the latest previous secret is kept.
-• After a testnet reset, a new payment could reuse the event ID of a payment recorded at the same ledger position on the old network and be skipped as a duplicate.
-• If Horizon is unreachable while the worker is lagging, a new watch's startLedger can be earlier than "now", so it may match payments made shortly before it was created.
-• There is no limit on watches or endpoints per developer.
+• A payment to an M-address and a payment with an ID memo are indistinguishable in the RPC event, so both surface as an ID memo.
+• backfillHours is best-effort: the request is lost if the worker is down at that moment, and payments already recorded for another watch on the same wallet are not re-matched.
+• Senders that are claimable balances or liquidity pools are untested; if the SDK cannot decode such an address the event is dropped.
+• Two developers acting together can still occupy all 20 delivery slots (10 each).

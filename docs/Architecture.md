@@ -13,7 +13,7 @@ A payment goes from ledger close to a delivered webhook in about 5–10 s, throu
     3. For each VERIFIED match (and each REJECTED match when the watch opted in to payment.rejected): insert a WebhookEvent (unique on matchId) and a Delivery row (PENDING, due now).
     4. Advance the Cursor.
     5. COMMIT, then NOTIFY deliveries and NOTIFY payments.
-5. Dispatcher wakes on LISTEN deliveries (and polls every 1 s as a fallback). It claims due rows with FOR UPDATE SKIP LOCKED, sets SENDING, a 60 s lease and attemptCount + 1.
+5. Dispatcher wakes on LISTEN deliveries (and polls every 1 s as a fallback). It claims due rows with FOR UPDATE SKIP LOCKED, sets SENDING, a 60 s lease and attemptCount + 1 (a row re-claimed after a crashed send keeps its attempt number).
 6. Send. Load the endpoint's current URL and secret, build headers, sign, POST through the SSRF-safe client.
 7. Transaction B (result): insert a DeliveryAttempt; set the delivery to DELIVERED, RETRYING (with nextAttemptAt) or FAILED; update the endpoint's failure counters; COMMIT; NOTIFY deliveries_updated.
 8. Dashboard receives the change over Server-Sent Events and updates the payment and delivery views live.
@@ -138,7 +138,7 @@ model Endpoint {
   url                 String
   description         String?
   secretEnc           String         // base64(iv | authTag | ciphertext), AES-256-GCM
-  prevSecretEnc       String?
+  prevSecretEnc       String?        // one encrypted secret, or a JSON list of { enc, until } after overlapping rotations
   prevSecretUntil     DateTime?
   status              EndpointStatus @default(ACTIVE)
   consecutiveFailures Int            @default(0) // failed EVENTS in a row, not attempts

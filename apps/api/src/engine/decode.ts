@@ -99,6 +99,9 @@ export function decodeEvent(
   const destination = toBaseAddress(to);
   if (!StrKey.isValidEd25519PublicKey(destination.base)) return null;
 
+  // A wallet paying itself (e.g. a path-payment swap) has not received anything.
+  if (toBaseAddress(from).base === destination.base) return null;
+
   const ledgerClosedAt = new Date(event.ledgerClosedAt);
   if (Number.isNaN(ledgerClosedAt.getTime())) return null;
 

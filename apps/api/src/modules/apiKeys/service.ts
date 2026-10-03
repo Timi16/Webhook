@@ -14,13 +14,16 @@ function serialize(key: ApiKey) {
   };
 }
 
-export function createApiKeysService(repo: ApiKeysRepo) {
+export function createApiKeysService(repo: ApiKeysRepo, maxApiKeys = 20) {
   return {
     async list(developerId: string) {
       return { data: (await repo.list(developerId)).map(serialize) };
     },
     /** The full key is returned only here; only its SHA-256 is stored. */
     async create(developerId: string, name: string) {
+      if ((await repo.countActive(developerId)) >= maxApiKeys) {
+        throw new AppError("CONFLICT", `API key limit reached (${maxApiKeys}); revoke one first`);
+      }
       const { key, prefix, keyHash } = generateApiKey();
       const apiKey = await repo.create(developerId, { name, prefix, keyHash });
       return { apiKey: serialize(apiKey), key };

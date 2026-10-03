@@ -382,6 +382,29 @@ describe("ingestion and matching", () => {
     source.tip = 130;
     await ingestion.tick();
     expect(await prisma.webhookEvent.count({ where: { type: "payment.received" } })).toBe(1);
+    // Ledger positions repeat on the new network. A payment whose raw event ID equals one recorded
+    // before the reset is a different payment and must not be skipped as a duplicate.
+    const [afterReset] = await prisma.chainPayment.findMany();
+    expect(afterReset!.eventId).toMatch(/^r[0-9a-z]+-\d{19}-\d{10}$/);
+    const recycled = makePayment({
+      to: a.watch.walletAddress,
+      ledger: 126,
+      eventId: "0000000000000000777-0000000000",
+    });
+    await prisma.$transaction((tx) =>
+      processPayment(tx, { ...recycled, txHash: "cd".repeat(32) }, watchedSet.get(recycled.to)),
+    );
+    source.payments.push(recycled);
+    await saveCursor(prisma, { ledger: 125 }, env.NETWORK_PASSPHRASE);
+    await ingestion.tick();
+    expect(
+      await prisma.chainPayment.count({
+        where: { eventId: { endsWith: "0000000000000000777-0000000000" } },
+      }),
+    ).toBe(2);
+    await reconcile({ prisma, source, watchedSet, logger });
+    expect(await prisma.chainPayment.count()).toBe(3); // and reconciliation adds nothing
+
     source.tip = 120;
     await saveCursor(prisma, { ledger: 120 }, env.NETWORK_PASSPHRASE);
 

@@ -67,6 +67,7 @@ export function makeTestApp(db: TestDb, overrides: Partial<AppDeps> = {}): TestA
     loginDelayMs: 0,
     testWaitMs: 3_000,
     rateLimits: { global: 100_000, auth: 100_000, api: 100_000 },
+    quotas: { endpoints: 1_000, watches: 1_000, apiKeys: 1_000 },
     // Hostnames resolve to a public address unless they say otherwise.
     urlPolicy: {
       lookup: async (host) => [

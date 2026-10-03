@@ -468,13 +468,62 @@ describe("dispatcher", () => {
     });
     expect(await pass(dispatcher)).toBe(1);
 
+    // Nothing was recorded for the crashed send, so this is attempt 1 again, not attempt 2.
     const row = await delivery(deliveryId);
-    expect(row).toMatchObject({ status: "DELIVERED", attemptCount: 2 });
-    expect(row.attempts.map((a) => a.number)).toEqual([2]);
+    expect(row).toMatchObject({ status: "DELIVERED", attemptCount: 1 });
+    expect(row.attempts.map((a) => a.number)).toEqual([1]);
     expect(receiver.requests[0]!.headers).toMatchObject({
       "webhook-id": eventId,
-      "webhook-attempt": "2",
+      "webhook-attempt": "1",
     });
+  });
+
+  it("D11: a crash during the 10th attempt still ends as the 10th attempt and counts as a failed event", async () => {
+    const { developer, endpoint } = await setup("/hook?mode=500", {
+      status: "FAILING",
+      consecutiveFailures: 19,
+    });
+    const { deliveryId } = await queue(developer.id, endpoint.id);
+    await prisma.delivery.update({
+      where: { id: deliveryId },
+      data: { status: "SENDING", attemptCount: 10, leaseUntil: new Date(Date.now() - 5_000) },
+    });
+
+    await pass(makeDispatcher());
+
+    expect(await delivery(deliveryId)).toMatchObject({ status: "FAILED", attemptCount: 10 });
+    expect(await endpointRow(endpoint.id)).toMatchObject({
+      status: "DISABLED",
+      disabledReason: "TOO_MANY_FAILURES",
+      consecutiveFailures: 20,
+    });
+  });
+
+  it("D10: one developer with many slow endpoints never holds more than 10 of the 20 slots", async () => {
+    const greedy = await seedDeveloper(prisma);
+    for (let e = 0; e < 4; e++) {
+      const slow = await seedEndpoint(prisma, greedy.id, {
+        url: `${receiver.url}/tarpit-${e}?mode=slow`,
+      });
+      for (let i = 0; i < 8; i++) await queue(greedy.id, slow.id);
+    }
+    const other = await setup("/fast");
+    const quick = await queue(other.developer.id, other.endpoint.id);
+    const dispatcher = makeDispatcher();
+
+    expect(await dispatcher.tick()).toBe(11); // 10 for the greedy developer + 1 for the other
+    const sending = await prisma.delivery.count({
+      where: { status: "SENDING", event: { developerId: greedy.id } },
+    });
+    expect(sending).toBe(10);
+    expect(await dispatcher.tick()).toBe(0); // the greedy developer gets no more until a slot frees up
+    await waitFor(async () => (await delivery(quick.deliveryId)).status === "DELIVERED");
+    await dispatcher.drain();
+    expect(
+      await prisma.delivery.count({
+        where: { status: "DELIVERED", event: { developerId: greedy.id } },
+      }),
+    ).toBe(10);
   });
 
   it("D13: after a secret rotation both signatures are sent for 24 h, then only the new one", async () => {
@@ -495,6 +544,15 @@ describe("dispatcher", () => {
     expect(verifyWebhook(newSecret, second!.headers, second!.body)).toBe(true);
     expect(verifyWebhook(endpoint.secret, second!.headers, second!.body)).toBe(true);
 
+    // A second rotation inside the window keeps the original secret valid as well.
+    const { secret: newest } = await endpoints.rotateSecret(developer.id, endpoint.id);
+    await queue(developer.id, endpoint.id);
+    await pass(dispatcher);
+    const twice = receiver.requests[2]!;
+    expect(twice.headers["webhook-signature"]!.split(", ")).toHaveLength(3);
+    for (const s of [newest, newSecret, endpoint.secret])
+      expect(verifyWebhook(s, twice.headers, twice.body)).toBe(true);
+
     // The grace window is over.
     await prisma.endpoint.update({
       where: { id: endpoint.id },
@@ -502,9 +560,10 @@ describe("dispatcher", () => {
     });
     await queue(developer.id, endpoint.id);
     await pass(dispatcher);
-    const third = receiver.requests[2]!;
+    const third = receiver.requests[3]!;
     expect(third.headers["webhook-signature"]!.split(", ")).toHaveLength(1);
-    expect(verifyWebhook(newSecret, third.headers, third.body)).toBe(true);
+    expect(verifyWebhook(newest, third.headers, third.body)).toBe(true);
+    expect(verifyWebhook(newSecret, third.headers, third.body)).toBe(false);
     expect(verifyWebhook(endpoint.secret, third.headers, third.body)).toBe(false);
   });
 

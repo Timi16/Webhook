@@ -2,6 +2,7 @@ import type { Endpoint } from "@prisma/client";
 import type { Env } from "../../config/env.js";
 import { buildPingPayload } from "../../delivery/payload.js";
 import { assertUrlAllowed, UrlPolicyError, type UrlPolicy } from "../../delivery/safeHttp.js";
+import { rotatedSecretFields } from "../../delivery/secrets.js";
 import { encryptSecret } from "../../lib/crypto.js";
 import { AppError } from "../../lib/errors.js";
 import { generateWebhookSecret, newEventId } from "../../lib/ids.js";
@@ -34,6 +35,7 @@ export interface EndpointsServiceOptions {
   urlPolicy?: UrlPolicy;
   /** How long POST /test waits for the first attempt. */
   testWaitMs?: number;
+  maxEndpoints?: number;
 }
 
 export function createEndpointsService(
@@ -74,6 +76,13 @@ export function createEndpointsService(
       developerId: string,
       input: { url: string; description?: string | null | undefined },
     ) {
+      const maxEndpoints = options.maxEndpoints ?? 20;
+      if ((await repo.count(developerId)) >= maxEndpoints) {
+        throw new AppError(
+          "CONFLICT",
+          `Endpoint limit reached (${maxEndpoints}); delete one first`,
+        );
+      }
       const url = await checkUrl(input.url);
       const secret = generateWebhookSecret();
       const endpoint = await repo.create(developerId, {
@@ -137,8 +146,7 @@ export function createEndpointsService(
       const secret = generateWebhookSecret();
       const endpoint = await repo.update(developerId, id, {
         secretEnc: encryptSecret(secret, env.ENCRYPTION_KEY),
-        prevSecretEnc: current.secretEnc,
-        prevSecretUntil: new Date(Date.now() + ROTATION_GRACE_MS),
+        ...rotatedSecretFields(current, new Date(), ROTATION_GRACE_MS),
       });
       if (!endpoint) throw notFound();
       return { secret, previousSecretValidUntil: endpoint.prevSecretUntil?.toISOString() ?? null };

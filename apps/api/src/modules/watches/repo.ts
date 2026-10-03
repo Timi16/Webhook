@@ -24,6 +24,8 @@ export function createWatchesRepo(prisma: PrismaClient) {
         orderBy: { createdAt: "desc" },
       }),
 
+    count: (developerId: string) => prisma.watch.count({ where: { developerId, deletedAt: null } }),
+
     endpointExists: async (developerId: string, endpointId: string) =>
       (await prisma.endpoint.count({ where: { id: endpointId, developerId, deletedAt: null } })) >
       0,
@@ -75,13 +77,11 @@ export function createWatchesRepo(prisma: PrismaClient) {
     },
 
     /** Last ledger the worker has processed, if it has ever run. Not tenant data. */
-    cursorLedger: async () =>
-      (
-        await prisma.cursor.findUnique({
-          where: { name: RPC_CURSOR_NAME },
-          select: { ledger: true },
-        })
-      )?.ledger ?? null,
+    cursor: () =>
+      prisma.cursor.findUnique({
+        where: { name: RPC_CURSOR_NAME },
+        select: { ledger: true, updatedAt: true },
+      }),
   };
 }
 

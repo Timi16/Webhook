@@ -136,7 +136,7 @@ export function mapHorizonRecord(raw: unknown, wallet: string): NormalizedPaymen
 
   const payments: NormalizedPayment[] = [];
   for (const transfer of transfers) {
-    if (transfer.to !== wallet || !transfer.asset) continue;
+    if (transfer.to !== wallet || transfer.from === wallet || !transfer.asset) continue;
     let amountStroops: bigint;
     try {
       amountStroops = toStroops(transfer.amount);

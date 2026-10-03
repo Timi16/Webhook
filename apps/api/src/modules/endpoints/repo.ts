@@ -10,6 +10,8 @@ export function createEndpointsRepo(prisma: PrismaClient) {
 
   return {
     find,
+    count: (developerId: string) =>
+      prisma.endpoint.count({ where: { developerId, deletedAt: null } }),
     list: (developerId: string) =>
       prisma.endpoint.findMany({
         where: { developerId, deletedAt: null },

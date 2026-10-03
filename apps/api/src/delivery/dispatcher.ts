@@ -6,6 +6,7 @@ import type { Logger } from "../lib/logger.js";
 import type { Mailer } from "../lib/mailer.js";
 import { applyEndpointEffect, classifyAttempt, type EndpointChange } from "./endpointHealth.js";
 import type { HttpResult, SafeHttpClient } from "./safeHttp.js";
+import { previousSecrets } from "./secrets.js";
 import { nextDelayMs } from "./schedule.js";
 import { buildHeaders } from "./signer.js";
 
@@ -21,6 +22,8 @@ export interface DispatcherDeps {
   maxInFlight?: number;
   /** Sends in flight per endpoint. */
   perEndpoint?: number;
+  /** Sends in flight per developer, across all their endpoints. */
+  perDeveloper?: number;
   leaseSeconds?: number;
   random?: () => number;
 }
@@ -41,12 +44,14 @@ export class Dispatcher {
   private readonly inFlight = new Set<Promise<void>>();
   private readonly maxInFlight: number;
   private readonly perEndpoint: number;
+  private readonly perDeveloper: number;
   private readonly leaseSeconds: number;
   private wakeUp: (() => void) | undefined;
 
   constructor(private readonly deps: DispatcherDeps) {
     this.maxInFlight = deps.maxInFlight ?? 20;
     this.perEndpoint = deps.perEndpoint ?? 5;
+    this.perDeveloper = deps.perDeveloper ?? 10;
     this.leaseSeconds = deps.leaseSeconds ?? 60;
   }
 
@@ -106,35 +111,51 @@ export class Dispatcher {
 
   /**
    * Due = PENDING/RETRYING past nextAttemptAt, or SENDING with an expired lease (crashed
-   * mid-send). Never for a DISABLED endpoint. Per endpoint, only as many rows as it has free
-   * slots are taken, so one slow endpoint can never hold more than `perEndpoint` sends.
+   * mid-send). Never for a DISABLED endpoint.
+   *
+   * Free slots are handed out per endpoint (at most `perEndpoint` in flight) and per developer
+   * (at most `perDeveloper`), so neither one slow endpoint nor one developer with many slow
+   * endpoints can take every slot.
+   *
+   * A re-claimed crashed send keeps its attempt number: nothing was recorded for it, so it is
+   * the same attempt again, not a new one.
    */
   private async claim(limit: number): Promise<Claimed[]> {
     return this.deps.prisma.$queryRaw<Claimed[]>`
       UPDATE "Delivery"
       SET status = 'SENDING',
           "leaseUntil" = now() + make_interval(secs => ${this.leaseSeconds}),
-          "attemptCount" = "attemptCount" + 1,
+          "attemptCount" = "attemptCount" + CASE WHEN status = 'SENDING' THEN 0 ELSE 1 END,
           "updatedAt" = now()
       WHERE id IN (
         SELECT due.id
-        FROM "Endpoint" e
+        FROM "Developer" dev
         CROSS JOIN LATERAL (
-          SELECT d.id, d."nextAttemptAt"
-          FROM "Delivery" d
-          WHERE d."endpointId" = e.id
-            AND (
-              (d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= now())
-              OR (d.status = 'SENDING' AND d."leaseUntil" < now())
-            )
-          ORDER BY d."nextAttemptAt"
-          LIMIT GREATEST(0, ${this.perEndpoint} - (
+          SELECT per_endpoint.id, per_endpoint."nextAttemptAt"
+          FROM "Endpoint" e
+          CROSS JOIN LATERAL (
+            SELECT d.id, d."nextAttemptAt"
+            FROM "Delivery" d
+            WHERE d."endpointId" = e.id
+              AND (
+                (d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= now())
+                OR (d.status = 'SENDING' AND d."leaseUntil" < now())
+              )
+            ORDER BY d."nextAttemptAt"
+            LIMIT GREATEST(0, ${this.perEndpoint} - (
+              SELECT count(*) FROM "Delivery" s
+              WHERE s."endpointId" = e.id AND s.status = 'SENDING' AND s."leaseUntil" > now()
+            ))
+            FOR UPDATE OF d SKIP LOCKED
+          ) per_endpoint
+          WHERE e."developerId" = dev.id AND e.status <> 'DISABLED'
+          ORDER BY per_endpoint."nextAttemptAt"
+          LIMIT GREATEST(0, ${this.perDeveloper} - (
             SELECT count(*) FROM "Delivery" s
-            WHERE s."endpointId" = e.id AND s.status = 'SENDING' AND s."leaseUntil" > now()
+            JOIN "Endpoint" se ON se.id = s."endpointId"
+            WHERE se."developerId" = dev.id AND s.status = 'SENDING' AND s."leaseUntil" > now()
           ))
-          FOR UPDATE OF d SKIP LOCKED
         ) due
-        WHERE e.status <> 'DISABLED'
         ORDER BY due."nextAttemptAt"
         LIMIT ${limit}
       )
@@ -158,14 +179,10 @@ export class Dispatcher {
     let result: HttpResult;
     try {
       const { endpoint, event } = delivery;
-      const secrets = [decryptSecret(endpoint.secretEnc, this.deps.env.ENCRYPTION_KEY)];
-      if (
-        endpoint.prevSecretEnc &&
-        endpoint.prevSecretUntil &&
-        endpoint.prevSecretUntil > startedAt
-      ) {
-        secrets.push(decryptSecret(endpoint.prevSecretEnc, this.deps.env.ENCRYPTION_KEY));
-      }
+      const secrets = [
+        endpoint.secretEnc,
+        ...previousSecrets(endpoint, startedAt).map((s) => s.enc),
+      ].map((enc) => decryptSecret(enc, this.deps.env.ENCRYPTION_KEY));
       // Computed once per attempt; these exact bytes are both signed and sent.
       const rawBody = JSON.stringify(event.payload);
       const headers = buildHeaders({

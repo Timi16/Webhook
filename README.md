@@ -57,6 +57,22 @@ The scenario creates Friendbot accounts, sends every kind of payment (normal, wr
 fake-issuer USDC, wrong amount, memo cases, path payment, M-address, issuer mint) and checks that
 exactly 20 payments are recorded with the right outcomes and that 20 signed webhooks arrive.
 
+## Running with pm2
+
+[ecosystem.config.cjs](ecosystem.config.cjs) runs the API and the worker as two pm2 processes
+(`webhook-api`, `webhook-worker`), each reading `apps/api/.env`.
+
+```sh
+npm install -g pm2
+pnpm build
+pnpm --filter @webhook/api db:deploy
+pm2 start ecosystem.config.cjs          # add --env production to force NODE_ENV=production
+pm2 logs                                # or: pm2 status, pm2 restart webhook-worker
+pm2 save && pm2 startup                 # bring both back after a reboot
+```
+
+Run exactly one `webhook-worker`. After a code change: `pnpm build && pm2 reload ecosystem.config.cjs`.
+
 ## Checks
 
 ```sh

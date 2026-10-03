@@ -57,6 +57,8 @@ export interface AppDeps {
   urlPolicy?: UrlPolicy;
   loginDelayMs?: number;
   testWaitMs?: number;
+  /** Per-developer limits. Defaults: 20 endpoints, 100 watches, 20 active API keys. */
+  quotas?: { endpoints?: number; watches?: number; apiKeys?: number };
 }
 
 /** Middleware order is fixed (docs/Backend.md, "Middleware order"). */
@@ -130,17 +132,25 @@ export function buildApp(deps: AppDeps): Express {
       { authLimit: limiters.auth, requireOrigin: originGuard },
     ),
   );
-  app.use(createApiKeysRouter(api, createApiKeysService(createApiKeysRepo(prisma))));
+  app.use(
+    createApiKeysRouter(api, createApiKeysService(createApiKeysRepo(prisma), deps.quotas?.apiKeys)),
+  );
   app.use(
     createEndpointsRouter(
       api,
       createEndpointsService(createEndpointsRepo(prisma), env, {
         urlPolicy,
+        ...(deps.quotas?.endpoints !== undefined ? { maxEndpoints: deps.quotas.endpoints } : {}),
         ...(deps.testWaitMs !== undefined ? { testWaitMs: deps.testWaitMs } : {}),
       }),
     ),
   );
-  app.use(createWatchesRouter(api, createWatchesService(createWatchesRepo(prisma), horizon)));
+  app.use(
+    createWatchesRouter(
+      api,
+      createWatchesService(createWatchesRepo(prisma), horizon, deps.quotas?.watches),
+    ),
+  );
   app.use(createPaymentsRouter(api, createPaymentsService(createPaymentsRepo(prisma))));
   app.use(createEventsRouter(api, createEventsService(createEventsRepo(prisma))));
   app.use(createStreamRouter(api, hub));

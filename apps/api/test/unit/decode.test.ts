@@ -165,6 +165,13 @@ describe("decodeEvent", () => {
     expect(decodeEvent(spoofed, PASSPHRASE)).toBeNull();
   });
 
+  it("ignores a wallet paying itself, such as a path-payment swap", () => {
+    const self = transferEvent({
+      topic: [symbol("transfer"), address(to), address(to), text("native")],
+    });
+    expect(decodeEvent(self, PASSPHRASE)).toBeNull();
+  });
+
   it("drops failed calls, unknown topics, non-positive amounts and contract destinations", () => {
     expect(decodeEvent(transferEvent({ inSuccessfulContractCall: false }), PASSPHRASE)).toBeNull();
     expect(decodeEvent(transferEvent({ contractId: undefined }), PASSPHRASE)).toBeNull();

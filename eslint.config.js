@@ -8,7 +8,7 @@ const AMOUNT_MESSAGE =
   "Amounts are bigint stroops, never floats. Use the helpers in apps/api/src/lib/amount.ts.";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "docs/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "docs/**", "ecosystem.config.cjs"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { CHANNELS, notify } from "../db/notify.js";
 import type { Logger } from "../lib/logger.js";
-import { loadCursor, saveCursor } from "./cursor.js";
+import { loadCursor, loadNetworkGeneration, saveCursor, tagPayment } from "./cursor.js";
 import { processPayment } from "./matcher.js";
 import type { HorizonBackfillSource } from "./sources/horizonBackfill.js";
 import type { EventCursor, StellarSource } from "./types.js";
@@ -61,7 +61,10 @@ export class Ingestion {
     }
 
     const { payments, next, fetched } = await source.fetch(cursor, BATCH_LIMIT);
-    const relevant = payments.filter((p) => watchedSet.has(p.to));
+    const generation = await loadNetworkGeneration(prisma);
+    const relevant = payments
+      .filter((p) => watchedSet.has(p.to))
+      .map((p) => tagPayment(p, generation));
 
     await prisma.$transaction(
       async (tx) => {
@@ -114,11 +117,13 @@ export class Ingestion {
   ): Promise<void> {
     const { prisma, backfill, watchedSet } = this.deps;
     this.heartbeat = Date.now();
+    const generation = await loadNetworkGeneration(prisma);
     for await (const page of backfill.paymentsForWallet(wallet, fromLedger, toLedgerExclusive)) {
       this.heartbeat = Date.now(); // each page is progress; the watchdog must not restart us mid-backfill
       await prisma.$transaction(
         async (tx) => {
-          for (const p of page) await processPayment(tx, p, watchedSet.get(p.to));
+          for (const p of page)
+            await processPayment(tx, tagPayment(p, generation), watchedSet.get(p.to));
         },
         { timeout: TX_TIMEOUT_MS },
       );

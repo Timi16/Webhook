@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Logger } from "../lib/logger.js";
-import { loadCursor } from "./cursor.js";
+import { loadCursor, loadNetworkGeneration, tagPayment } from "./cursor.js";
 import { BATCH_LIMIT } from "./ingestion.js";
 import { processPayment } from "./matcher.js";
 import type { EventCursor, StellarSource } from "./types.js";
@@ -29,13 +29,16 @@ export async function reconcile(
   if (!cursor || watchedSet.size === 0) return { scanned: 0, recovered: 0 };
 
   const oldest = await source.oldestLedger();
+  const generation = await loadNetworkGeneration(prisma);
   let from: EventCursor = { ledger: Math.max(cursor.ledger - LOOKBACK_LEDGERS, oldest) };
   let scanned = 0;
   let recovered = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const { payments, next, fetched } = await source.fetch(from, BATCH_LIMIT);
-    const relevant = payments.filter((p) => p.ledger <= cursor.ledger && watchedSet.has(p.to));
+    const relevant = payments
+      .filter((p) => p.ledger <= cursor.ledger && watchedSet.has(p.to))
+      .map((p) => tagPayment(p, generation));
     scanned += relevant.length;
     if (relevant.length > 0) {
       await prisma.$transaction(

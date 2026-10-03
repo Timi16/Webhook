@@ -639,6 +639,85 @@ describe("watches", () => {
   });
 });
 
+describe("limits and the current ledger", () => {
+  it("caps endpoints, watches and active API keys per developer with 409", async () => {
+    const limited = makeTestApp(db, { quotas: { endpoints: 2, watches: 2, apiKeys: 2 } });
+    const dev = await limited.signup();
+    const first = await dev.createApiKey();
+    const key = first.key;
+    const post = (path: string, body: object) =>
+      request(limited.app).post(path).set(bearer(key)).send(body);
+
+    const endpointIds: string[] = [];
+    for (let i = 0; i < 2; i++)
+      endpointIds.push(
+        (await post("/v1/endpoints", { url: `https://q${i}.example.com` })).body.endpoint.id,
+      );
+    const third = await post("/v1/endpoints", { url: "https://q3.example.com" });
+    expect(third.status).toBe(409);
+    expect(third.body.error).toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("limit"),
+    });
+    // Deleting one frees a place.
+    expect(
+      (await request(limited.app).delete(`/v1/endpoints/${endpointIds[1]}`).set(bearer(key)))
+        .status,
+    ).toBe(204);
+    expect((await post("/v1/endpoints", { url: "https://q4.example.com" })).status).toBe(201);
+
+    const watch = { walletAddress: randomAddress(), endpointId: endpointIds[0], assets: [USDC] };
+    expect((await post("/v1/watches", watch)).status).toBe(201);
+    expect((await post("/v1/watches", { ...watch, walletAddress: randomAddress() })).status).toBe(
+      201,
+    );
+    expect((await post("/v1/watches", { ...watch, walletAddress: randomAddress() })).status).toBe(
+      409,
+    );
+
+    const newKey = () =>
+      request(limited.app)
+        .post("/v1/api-keys")
+        .set("Cookie", dev.cookie)
+        .set("Origin", ORIGIN)
+        .send({ name: "k" });
+    expect((await newKey()).status).toBe(201);
+    expect((await newKey()).status).toBe(409);
+    await request(limited.app)
+      .delete(`/v1/api-keys/${first.id}`)
+      .set("Cookie", dev.cookie)
+      .set("Origin", ORIGIN);
+    expect((await newKey()).status).toBe(201); // revoked keys do not count
+  });
+
+  it("estimates the ledger from the worker's cursor when Horizon is down, and refuses when it cannot know", async () => {
+    const { endpoint } = await createEndpoint();
+    const body = { walletAddress: randomAddress(), endpointId: endpoint.id, assets: [USDC] };
+    t.horizon.ledger = null;
+    try {
+      const blind = await request(t.app).post("/v1/watches").set(bearer(aliceKey)).send(body);
+      expect(blind.status).toBe(503);
+
+      // The worker last saved ledger 7000 two minutes ago: about 20 ledgers have closed since.
+      await prisma.cursor.create({
+        data: {
+          name: "rpc-events",
+          ledger: 7000,
+          networkPassphrase: "Test SDF Network ; September 2015",
+          updatedAt: new Date(Date.now() - 120_000),
+        },
+      });
+      const estimated = await request(t.app).post("/v1/watches").set(bearer(aliceKey)).send(body);
+      expect(estimated.status).toBe(201);
+      expect(estimated.body.watch.startLedger).toBeGreaterThanOrEqual(7020);
+      expect(estimated.body.watch.startLedger).toBeLessThanOrEqual(7022);
+    } finally {
+      t.horizon.ledger = 5000;
+      await prisma.cursor.deleteMany();
+    }
+  });
+});
+
 describe("payments and events", () => {
   let bob: TestSession;
   let bobKey: string;

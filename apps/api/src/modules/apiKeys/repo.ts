@@ -2,6 +2,8 @@ import type { PrismaClient } from "@prisma/client";
 
 export function createApiKeysRepo(prisma: PrismaClient) {
   return {
+    countActive: (developerId: string) =>
+      prisma.apiKey.count({ where: { developerId, revokedAt: null } }),
     list: (developerId: string) =>
       prisma.apiKey.findMany({ where: { developerId }, orderBy: { createdAt: "desc" } }),
     create: (developerId: string, data: { name: string; prefix: string; keyHash: string }) =>

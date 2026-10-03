@@ -9,6 +9,8 @@ import type { WatchesRepo } from "./repo.js";
 
 // Testnet closes a ledger about every 5 s.
 const LEDGERS_PER_HOUR = 720;
+// Real ledgers close about every 5 s; 6 s keeps an estimate at or below the real tip.
+const CONSERVATIVE_LEDGER_MS = 6_000;
 
 function notFound(): AppError {
   return new AppError("NOT_FOUND", "Resource not found");
@@ -85,7 +87,7 @@ function fingerprint(row: Watch): string {
   ]);
 }
 
-export function createWatchesService(repo: WatchesRepo, horizon: HorizonClient) {
+export function createWatchesService(repo: WatchesRepo, horizon: HorizonClient, maxWatches = 100) {
   async function mustFind(developerId: string, id: string): Promise<Watch> {
     const watch = await repo.find(developerId, id);
     if (!watch) throw notFound();
@@ -97,10 +99,25 @@ export function createWatchesService(repo: WatchesRepo, horizon: HorizonClient) 
       throw new AppError("NOT_FOUND", "Endpoint not found");
   }
 
-  /** The newest ledger we know of. Rules take effect from the next one. */
+  /**
+   * The newest ledger we know of. Rules take effect from the next one.
+   *
+   * Horizon's tip is authoritative. Without it, the worker's cursor is extrapolated by its age
+   * (slightly slower than real ledgers close, so the estimate never overshoots and a watch
+   * never skips payments made after it was created).
+   */
   async function currentLedger(): Promise<number> {
-    const [cursor, tip] = await Promise.all([repo.cursorLedger(), horizon.latestLedger()]);
-    return Math.max(cursor ?? 0, tip ?? 0);
+    const [cursor, tip] = await Promise.all([repo.cursor(), horizon.latestLedger()]);
+    if (tip !== null) return Math.max(cursor?.ledger ?? 0, tip);
+    if (!cursor) {
+      throw new AppError(
+        "INTERNAL",
+        "Cannot determine the current ledger: Stellar is unreachable right now. Try again shortly.",
+        { status: 503 },
+      );
+    }
+    const ageMs = Math.max(0, Date.now() - cursor.updatedAt.getTime());
+    return cursor.ledger + Math.floor(ageMs / CONSERVATIVE_LEDGER_MS);
   }
 
   /** A missing account or trustline is a warning, not an error: set things up in any order. */
@@ -140,6 +157,9 @@ export function createWatchesService(repo: WatchesRepo, horizon: HorizonClient) 
 
     async create(developerId: string, input: CreateWatchInput) {
       await assertEndpoint(developerId, input.endpointId);
+      if ((await repo.count(developerId)) >= maxWatches) {
+        throw new AppError("CONFLICT", `Watch limit reached (${maxWatches}); delete one first`);
+      }
       const tip = await currentLedger();
       const startLedger = Math.max(tip + 1 - input.backfillHours * LEDGERS_PER_HOUR, 1);
       const row = await repo.create(
