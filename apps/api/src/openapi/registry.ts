@@ -16,6 +16,8 @@ export interface RouteSpec<
   /** Express-style path, e.g. /v1/watches/:id */
   path: string;
   summary: string;
+  /** Longer explanation shown in the API reference (Markdown). */
+  description?: string;
   tag: string;
   auth: AuthMode;
   /** Success status; 204 sends no body. Default 200. */
@@ -114,6 +116,7 @@ export function createApi(deps: ApiDeps) {
       method: spec.method,
       path: spec.path.replace(/:(\w+)/g, "{$1}"),
       summary: spec.summary,
+      ...(spec.description ? { description: spec.description } : {}),
       tags: [spec.tag],
       security:
         spec.auth === "none"
@@ -188,14 +191,120 @@ export function createRegistry(): OpenAPIRegistry {
   return registry;
 }
 
-export function generateOpenApiDocument(registry: OpenAPIRegistry) {
+const API_DESCRIPTION = `
+Webhook watches Stellar Testnet wallets and tells your server when they are paid. This reference
+covers every endpoint; the guides explain how the pieces fit together.
+
+## Authentication
+
+Send your API key on every request:
+
+\`\`\`
+Authorization: Bearer whk_test_...
+\`\`\`
+
+Keys are created with a logged-in session (\`POST /v1/api-keys\`) and shown once. The \`/auth\`
+endpoints and API-key management use the session cookie instead, and their state-changing requests
+must carry an \`Origin\` header equal to the dashboard's origin.
+
+## Errors
+
+Every error has the same shape. \`code\` is stable and safe to branch on; \`requestId\` is also
+returned in the \`X-Request-Id\` header.
+
+\`\`\`json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "walletAddress: invalid_stellar_address",
+    "details": [{ "path": "walletAddress", "issue": "invalid_stellar_address" }],
+    "requestId": "01K6V8Z3M4T7Q2X9B5N1R0C8YD"
+  }
+}
+\`\`\`
+
+- \`VALIDATION_FAILED\` (400): A field is missing, malformed or unknown.
+- \`SECRET_KEY_REJECTED\` (400): A Stellar secret key (\`S...\`) was sent where an address belongs.
+- \`INSECURE_URL\` (400): Endpoint URL is not HTTPS, has credentials or uses another port than 443 or 8443.
+- \`SSRF_BLOCKED\` (400): Endpoint URL resolves to a private or internal address.
+- \`UNAUTHENTICATED\` (401): Missing, invalid or revoked credentials.
+- \`FORBIDDEN_ORIGIN\` (403): Cookie request without the expected \`Origin\` header.
+- \`NOT_FOUND\` (404): The resource does not exist or belongs to someone else.
+- \`CONFLICT\` (409): For example an email already in use, or a limit reached.
+- \`RATE_LIMITED\` (429): Too many requests. See \`Retry-After\`.
+- \`INTERNAL\` (500): Something went wrong on our side.
+
+## Pagination
+
+List endpoints take \`limit\` (1 to 100, default 50) and \`cursor\`, and return \`nextCursor\`.
+Pass it back as \`cursor\` for the next page; it is \`null\` on the last page.
+
+## Amounts
+
+Amounts are decimal strings with up to 7 places (\`"10.5"\`). Responses carry both the decimal form
+and the exact integer number of stroops (1 unit = 10,000,000 stroops). Never parse them as floats.
+
+## Rate limits
+
+300 requests a minute per developer on \`/v1\`, 60 a minute per IP on public routes and 5 a minute
+per IP on the credential endpoints under \`/auth\`.
+`;
+
+const TAGS = [
+  {
+    name: "Health",
+    description:
+      "Whether the service is up and keeping pace with the ledger. Public, no authentication. Use it for uptime checks.",
+  },
+  {
+    name: "Auth",
+    description:
+      "Accounts and browser sessions, used by the dashboard. A session is a cookie; every state-changing request must send the dashboard's `Origin` header. Servers should use an API key instead (see **API keys**).",
+  },
+  {
+    name: "API keys",
+    description:
+      "Keys your servers use to call the API (`Authorization: Bearer whk_test_...`). The full key is shown once when created; only a hash is stored. These endpoints need a session, so a leaked key cannot mint more keys. Up to 20 active keys per developer.",
+  },
+  {
+    name: "Endpoints",
+    description:
+      "URLs on your server that receive webhooks. Each has its own signing secret, shown once on creation. An endpoint is `ACTIVE`, `FAILING` (recent attempts failed) or `DISABLED` (it answered `410`, or 20 events in a row could not be delivered). URLs must be HTTPS on port 443 or 8443 and resolve to a public address. Up to 20 per developer.",
+  },
+  {
+    name: "Watches",
+    description:
+      "A watch is a wallet plus the rules a payment must meet: accepted assets, amount, memo and senders. Every payment to the wallet is evaluated by each of its watches and ends `VERIFIED` or `REJECTED`. A watch delivers to one endpoint. Changes apply from the next ledger; events that already exist are never rewritten. Up to 100 per developer.",
+  },
+  {
+    name: "Payments",
+    description:
+      "Payments detected on your watched wallets, with the result of each rule. This is the record of what happened on the ledger, whether or not a webhook was sent.",
+  },
+  {
+    name: "Events",
+    description:
+      "Webhook events and their deliveries. An event's payload is fixed when it is created; each delivery lists every attempt with its status code, duration, error and the start of your server's response.",
+  },
+  {
+    name: "Stream",
+    description:
+      "Live updates for the dashboard over Server-Sent Events. Session only. Event names: `payment.detected`, `delivery.updated`, `endpoint.updated`, `system.notice`.",
+  },
+];
+
+export function generateOpenApiDocument(
+  registry: OpenAPIRegistry,
+  serverUrl = "https://api.your-domain.com",
+) {
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: "3.1.0",
     info: {
       title: "Webhook API",
       version: "1.0.0",
-      description:
-        "Stellar Testnet payment webhooks: register a wallet, get a signed event when it is paid.",
+      description: API_DESCRIPTION,
     },
+    servers: [{ url: serverUrl, description: "Webhook API" }],
+    tags: TAGS,
   });
 }

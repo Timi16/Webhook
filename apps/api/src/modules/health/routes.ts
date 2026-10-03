@@ -13,6 +13,8 @@ export function createHealthRouter(api: Api, service: HealthService): Router {
       path: "/health",
       response: healthResponse,
       summary: "Service health",
+      description:
+        "Returns `ok` or `degraded` with the last ledger processed, how many seconds ingestion is behind and how many deliveries are waiting. Answers `503` when the database is unreachable.",
       tag: "Health",
       auth: "none",
     },

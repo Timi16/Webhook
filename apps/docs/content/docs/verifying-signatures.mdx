@@ -1,6 +1,6 @@
 ---
 title: Verifying signatures
-description: Prove a webhook came from Webhook and was not altered, with a copy-paste Node.js function.
+description: Prove a webhook came from Webhook and was not altered, with a copy-paste function for Node.js, Python or Ruby.
 ---
 
 Anyone who learns your endpoint URL can send it a request. The signature lets you reject everything
@@ -18,9 +18,13 @@ signature = hex( HMAC-SHA256( secret, timestamp + "." + rawBody ) )
 
 The result is sent as `Webhook-Signature: v1=<hex>`.
 
-## Node.js
+## The function
 
-This function has no dependencies. It is tested against the service's real signer.
+Each version below has no dependencies beyond the language's standard library, and each is run
+against the service's real signer and the test vector at the bottom of this page.
+
+<Tabs groupId="server-language" persist items={['Node.js', 'Python', 'Ruby']}>
+<Tab value="Node.js">
 
 ```js title="verify-webhook.mjs"
 // verify-webhook.mjs
@@ -51,9 +55,74 @@ export function verifyWebhook(secret, headers, rawBody, toleranceSeconds = 300) 
 }
 ```
 
-## Using it with Express
+</Tab>
+<Tab value="Python">
 
-The signature covers the raw bytes, so read the body as text before parsing it.
+```python title="verify_webhook.py"
+# verify_webhook.py
+import hashlib
+import hmac
+import time
+
+
+def verify_webhook(secret: str, headers, raw_body: bytes, tolerance_seconds: int = 300) -> bool:
+    """True only if the request is authentic and recent.
+
+    secret    the endpoint's signing secret (whsec_...)
+    headers   request headers; names are looked up in lower case
+    raw_body  the request body exactly as received, as bytes
+    """
+    timestamp = headers.get("webhook-timestamp") or ""
+    if not (timestamp.isascii() and timestamp.isdigit() and len(timestamp) <= 12):
+        return False
+    # Reject old requests so a captured one cannot be replayed later.
+    if abs(time.time() - int(timestamp)) > tolerance_seconds:
+        return False
+
+    signed = timestamp.encode() + b"." + raw_body
+    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+    # During a secret rotation the header carries two signatures: accept either.
+    parts = [part.strip() for part in (headers.get("webhook-signature") or "").split(",")]
+    return any(
+        part.startswith("v1=") and hmac.compare_digest(part[3:], expected) for part in parts
+    )
+```
+
+</Tab>
+<Tab value="Ruby">
+
+```ruby title="verify_webhook.rb"
+# verify_webhook.rb
+require "openssl"
+
+# True only if the request is authentic and recent.
+#
+# secret    the endpoint's signing secret (whsec_...)
+# headers   a Hash of request headers with lower-case names
+# raw_body  the request body exactly as received
+def verify_webhook(secret, headers, raw_body, tolerance_seconds = 300)
+  timestamp = headers["webhook-timestamp"].to_s
+  return false unless timestamp.match?(/\A\d{1,12}\z/)
+  # Reject old requests so a captured one cannot be replayed later.
+  return false if (Time.now.to_i - timestamp.to_i).abs > tolerance_seconds
+
+  expected = OpenSSL::HMAC.hexdigest("SHA256", secret, "#{timestamp}.#{raw_body}")
+  # During a secret rotation the header carries two signatures: accept either.
+  headers["webhook-signature"].to_s.split(",").map(&:strip).any? do |part|
+    part.start_with?("v1=") && OpenSSL.secure_compare(part[3..], expected)
+  end
+end
+```
+
+</Tab>
+</Tabs>
+
+## Using it in a handler
+
+The signature covers the raw bytes, so read the body before anything parses it.
+
+<Tabs groupId="server-language" persist items={['Node.js', 'Python', 'Ruby']}>
+<Tab value="Node.js">
 
 ```js title="server.mjs"
 import express from "express";
@@ -73,6 +142,56 @@ app.post("/webhooks/stellar", express.text({ type: "application/json" }), (req, 
 app.listen(3000);
 ```
 
+</Tab>
+<Tab value="Python">
+
+```python title="server.py"
+import json
+import os
+
+from flask import Flask, request
+
+from verify_webhook import verify_webhook
+
+app = Flask(__name__)
+
+
+@app.post("/webhooks/stellar")
+def stellar_webhook():
+    raw_body = request.get_data()  # bytes, before any JSON parsing
+    headers = {name.lower(): value for name, value in request.headers.items()}
+    if not verify_webhook(os.environ["WEBHOOK_SECRET"], headers, raw_body):
+        return "invalid signature", 400
+    event = json.loads(raw_body)
+    # 1. Skip it if event["id"] was already processed.  2. Store it.  3. Answer, then do the work.
+    return "", 200
+```
+
+</Tab>
+<Tab value="Ruby">
+
+```ruby title="server.rb"
+require "json"
+require "sinatra"
+require_relative "verify_webhook"
+
+post "/webhooks/stellar" do
+  raw_body = request.body.read # before any JSON parsing
+  headers = {
+    "webhook-timestamp" => request.env["HTTP_WEBHOOK_TIMESTAMP"],
+    "webhook-signature" => request.env["HTTP_WEBHOOK_SIGNATURE"],
+  }
+  halt 400, "invalid signature" unless verify_webhook(ENV.fetch("WEBHOOK_SECRET"), headers, raw_body)
+
+  event = JSON.parse(raw_body)
+  # 1. Skip it if event["id"] was already processed.  2. Store it.  3. Answer, then do the work.
+  status 200
+end
+```
+
+</Tab>
+</Tabs>
+
 <Callout type="warn">
   If your framework parses JSON before your handler runs, the re-serialised body will not match the
   signature. Always verify the bytes you received.
@@ -80,7 +199,7 @@ app.listen(3000);
 
 ## Other languages
 
-The check is the same everywhere:
+For Go, PHP, Java or anything else, the check is the same:
 
 1. Read `Webhook-Timestamp` and refuse the request if it is more than 5 minutes from your clock.
 2. Compute HMAC-SHA256 of `timestamp + "." + rawBody` with the secret, as lowercase hex.

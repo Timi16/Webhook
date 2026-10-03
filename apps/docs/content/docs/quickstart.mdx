@@ -32,6 +32,10 @@ The second response contains `key`, starting with `whk_test_`. It is shown once;
 export KEY=whk_test_...
 ```
 
+The examples from here on come in three flavours. The Node.js ones use the built-in `fetch`
+(Node 18 or newer); the Python ones use [`requests`](https://pypi.org/project/requests/). Both read
+the same two environment variables, `API` and `KEY`.
+
 <Callout type="warn">
   Passwords need at least 10 characters. The `Origin` header is required on these two calls because
   they use a cookie; calls made with an API key do not need it.
@@ -39,20 +43,82 @@ export KEY=whk_test_...
 
 ## 2. Create an endpoint
 
+<Tabs groupId="language" persist items={['curl', 'Node.js', 'Python']}>
+<Tab value="curl">
+
 ```bash
 curl -X POST $API/v1/endpoints \
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/webhooks/stellar","description":"production"}'
 ```
 
+</Tab>
+<Tab value="Node.js">
+
+```js
+const res = await fetch(`${process.env.API}/v1/endpoints`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${process.env.KEY}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ url: "https://example.com/webhooks/stellar", description: "production" }),
+});
+const { endpoint, secret } = await res.json();
+console.log(endpoint.id, secret); // store the secret now: it is not shown again
+```
+
+</Tab>
+<Tab value="Python">
+
+```python
+import os, requests
+
+res = requests.post(
+    f"{os.environ['API']}/v1/endpoints",
+    headers={"Authorization": f"Bearer {os.environ['KEY']}"},
+    json={"url": "https://example.com/webhooks/stellar", "description": "production"},
+)
+body = res.json()
+print(body["endpoint"]["id"], body["secret"])  # store the secret now: it is not shown again
+```
+
+</Tab>
+</Tabs>
+
 The response contains the endpoint's `id` and its `secret` (`whsec_...`). The secret is also shown
 only once. Your server uses it to [verify signatures](/docs/verifying-signatures).
 
 ## 3. Check that your server receives webhooks
 
+<Tabs groupId="language" persist items={['curl', 'Node.js', 'Python']}>
+<Tab value="curl">
+
 ```bash
 curl -X POST $API/v1/endpoints/ENDPOINT_ID/test -H "Authorization: Bearer $KEY"
 ```
+
+</Tab>
+<Tab value="Node.js">
+
+```js
+const res = await fetch(`${process.env.API}/v1/endpoints/${endpointId}/test`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${process.env.KEY}` },
+});
+console.log(await res.json());
+```
+
+</Tab>
+<Tab value="Python">
+
+```python
+res = requests.post(
+    f"{os.environ['API']}/v1/endpoints/{endpoint_id}/test",
+    headers={"Authorization": f"Bearer {os.environ['KEY']}"},
+)
+print(res.json())
+```
+
+</Tab>
+</Tabs>
 
 This sends a `test.ping` event and returns the result of the first attempt:
 
@@ -61,6 +127,9 @@ This sends a `test.ping` event and returns the result of the first attempt:
 ```
 
 ## 4. Watch a wallet
+
+<Tabs groupId="language" persist items={['curl', 'Node.js', 'Python']}>
+<Tab value="curl">
 
 ```bash
 curl -X POST $API/v1/watches \
@@ -74,6 +143,49 @@ curl -X POST $API/v1/watches \
     "memoRule": { "kind": "present" }
   }'
 ```
+
+</Tab>
+<Tab value="Node.js">
+
+```js
+const res = await fetch(`${process.env.API}/v1/watches`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${process.env.KEY}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    walletAddress: "G...",
+    label: "Shop checkout",
+    endpointId,
+    assets: [{ code: "USDC", issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" }],
+    amountRule: { kind: "min", amount: "10" },
+    memoRule: { kind: "present" },
+  }),
+});
+const { watch, warnings } = await res.json();
+console.log(watch.id, warnings);
+```
+
+</Tab>
+<Tab value="Python">
+
+```python
+res = requests.post(
+    f"{os.environ['API']}/v1/watches",
+    headers={"Authorization": f"Bearer {os.environ['KEY']}"},
+    json={
+        "walletAddress": "G...",
+        "label": "Shop checkout",
+        "endpointId": endpoint_id,
+        "assets": [{"code": "USDC", "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"}],
+        "amountRule": {"kind": "min", "amount": "10"},
+        "memoRule": {"kind": "present"},
+    },
+)
+body = res.json()
+print(body["watch"]["id"], body["warnings"])
+```
+
+</Tab>
+</Tabs>
 
 The response includes `warnings`. `ACCOUNT_NOT_FOUND` or `NO_TRUSTLINE:USDC` mean the wallet cannot
 receive that asset yet; the watch is still saved, so you can fix the wallet afterwards.

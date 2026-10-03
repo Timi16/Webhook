@@ -20,6 +20,8 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
       path: "/v1/events",
       response: eventListResponse,
       summary: "List webhook events",
+      description:
+        "Webhook events, newest first, with the state of their deliveries. Filter by type, delivery status or watch.",
       tag,
       auth: "any",
       query: listEventsQuerySchema,
@@ -33,6 +35,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
       path: "/v1/events/:id",
       response: eventDetailResponse,
       summary: "Get an event with its payload, deliveries and attempts",
+      description: "One event with the exact payload that was sent and every delivery attempt.",
       tag,
       auth: "any",
       params: idParamSchema,
@@ -46,6 +49,8 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
       path: "/v1/events/:id/resend",
       response: deliveryEnvelope,
       summary: "Resend an event (same Webhook-Id)",
+      description:
+        "Queues the event again with the same `Webhook-Id`, even if it was already delivered. Answers `409` while an attempt is in flight.",
       tag,
       auth: "any",
       status: 202,

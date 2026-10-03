@@ -11,6 +11,8 @@ export function createStreamRouter(api: Api, hub: StreamHub): Router {
       method: "get",
       path: "/v1/stream",
       summary: "Live updates (Server-Sent Events)",
+      description:
+        "Opens a Server-Sent Events stream scoped to the logged-in developer. A comment line is sent every 25 seconds to keep the connection open. At most 5 streams per developer.",
       tag: "Stream",
       auth: "session",
     },

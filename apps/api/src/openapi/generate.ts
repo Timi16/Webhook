@@ -26,7 +26,11 @@ const app = buildApp({
   logger: createLogger(env),
   prisma: createPrismaClient(env.DATABASE_URL),
 });
-const document = generateOpenApiDocument(app.locals.registry as OpenAPIRegistry);
+// API_PUBLIC_URL is the address developers call, shown in every code sample.
+const document = generateOpenApiDocument(
+  app.locals.registry as OpenAPIRegistry,
+  process.env.API_PUBLIC_URL,
+);
 const out = process.argv[2] ?? "openapi.json";
 writeFileSync(out, `${JSON.stringify(document, null, 2)}\n`);
 console.log(`Wrote ${Object.keys(document.paths ?? {}).length} paths to ${out}`);
