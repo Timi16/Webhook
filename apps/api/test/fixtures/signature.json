@@ -1,0 +1,6 @@
+{
+  "secret": "whsec_dGVzdC12ZWN0b3Itc2VjcmV0LWZvci13ZWJob29rLWRvY3M",
+  "timestamp": 1790000000,
+  "body": "{\"id\":\"evt_01J9Z6K3QW0000000000000000\",\"type\":\"payment.received\",\"apiVersion\":\"2026-10-01\",\"createdAt\":\"2026-10-03T12:00:00.000Z\",\"data\":{\"payment\":{\"amount\":\"10.0000000\",\"amountStroops\":\"100000000\"}}}",
+  "signature": "3d5f81d9dc2d14a46db849030bb9541d7d9c30bad2e28c9e21ff84263d97ef3a"
+}

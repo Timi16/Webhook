@@ -57,6 +57,7 @@ model Endpoint {
   developerId         String
   developer           Developer      @relation(fields: [developerId], references: [id], onDelete: Cascade)
   url                 String
+  description         String?
   secretEnc           String         // base64(iv | authTag | ciphertext), AES-256-GCM
   prevSecretEnc       String?
   prevSecretUntil     DateTime?

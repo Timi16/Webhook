@@ -1,0 +1,19 @@
+{
+  "name": "@webhook/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "scenario": "tsx scenario.ts",
+    "mock-receiver": "tsx mock-receiver.ts",
+    "seed": "tsx --env-file=../apps/api/.env seed.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^17.2.1",
+    "@webhook/api": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}
