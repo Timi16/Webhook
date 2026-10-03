@@ -1,0 +1,21 @@
+# Local development only. Host port 5433 so it doesn't clash with another Postgres on 5432.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: webhook
+      POSTGRES_PASSWORD: webhook
+      POSTGRES_DB: webhooks
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - webhook-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webhook -d webhooks"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  webhook-pgdata:

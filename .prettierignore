@@ -1,0 +1,5 @@
+node_modules
+dist
+pnpm-lock.yaml
+docs
+apps/api/prisma/migrations
