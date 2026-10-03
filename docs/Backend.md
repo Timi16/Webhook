@@ -259,7 +259,7 @@ Supporting loops
 • reconciliation.ts: every 2 min, re-fetch from max(cursor.ledger - 60, oldestLedger) up to the cursor and run every payment through matcher.process. Duplicates hit the primary key and are skipped. It never moves the main cursor.
 • watchdog.ts: every 15 s: lag = tip - cursor.ledger. Over 12 ledgers for 2 min → Telegram alert. Main loop heartbeat older than 60 s → process.exit(1) so Docker restarts the worker.
 • networkReset.ts: set the cursor to the new tip, store lastNetworkResetAt, create a system.network_reset event for every active endpoint, alert.
-• horizonBackfill.ts: for each watched wallet, page /accounts/{id}/payments?join=transactions&order=asc from the gap start; map records to NormalizedPayment with source: "horizon" and an eventId derived from the operation ID, so live and backfilled rows never collide.
+• horizonBackfill.ts: for each watched wallet, page /accounts/{id}/payments?join=transactions&order=asc from the gap start (plus /operations for claimable-balance claims); map records to NormalizedPayment with source: "horizon" and an eventId derived from the operation ID, so live and backfilled rows never collide.
 Dispatcher (Deliverable 2)
 The dispatcher runs in the worker process, claims due deliveries from Postgres, sends each one through the SSRF-safe client, and records the result. It holds at most 20 sends in flight overall, 10 per developer and 5 per endpoint.
 Claiming
@@ -760,7 +760,7 @@ Decisions made while building, where the spec was silent or needed a correction.
 • A transfer whose sender is the watched wallet itself (for example a path-payment swap) is not a payment received and is ignored.
 • Creating or resuming a watch needs the current ledger. Horizon's tip is used; if Horizon is down, the worker's cursor is extrapolated by its age at 6 s per ledger (never ahead of the real tip); if neither is available the request gets 503.
 • Per-developer limits: 20 endpoints, 100 watches, 20 active API keys (409 CONFLICT beyond that). Deleted and revoked ones do not count.
+• When a transaction has already left RPC's history, its envelope is fetched from Horizon instead, so a u64 memo is still resolved correctly on late catch-up or reconciliation.
+• The Horizon backfill also recovers account merges and claims of claimable balances. Their records carry no amount, so it is read from the operation's effects; claims only appear in the operations feed, which is paged for claims alone. A claim's sender is the balance's B… address, the same as in the live event.
 Known limitations
-• If a transaction is no longer in RPC's retention window when a u64 memo is resolved, the value is kept as an ID memo (no mux ID). This can only happen on late reconciliation.
-• Claiming a claimable balance is detected live (the sender is the balance's B… address), but Horizon's payments feed does not list claims, so a Horizon backfill does not recover them.
 • With every one of the 20 delivery slots held by slow receivers, a new delivery waits for the first slot to free up: at most the 10 s send timeout.

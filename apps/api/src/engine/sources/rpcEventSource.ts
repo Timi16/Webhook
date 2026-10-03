@@ -86,6 +86,8 @@ export class RpcEventSource implements StellarSource {
     private readonly server: RpcClient,
     private readonly networkPassphrase: string,
     private readonly watchedWallets: () => string[],
+    /** Where to get a transaction envelope once it has left RPC's history (Horizon). */
+    private readonly archivedEnvelope?: (txHash: string) => Promise<string | null>,
   ) {}
 
   async latestLedger(): Promise<number> {
@@ -151,9 +153,14 @@ export class RpcEventSource implements StellarSource {
     const cached = this.transactions.get(txHash);
     if (cached) return cached;
     const res = await this.server.getTransaction(txHash);
-    if (res.status !== "SUCCESS") return null;
+    // RPC keeps transactions for a shorter time than events; Horizon still has the envelope.
+    const envelope =
+      res.status === "SUCCESS"
+        ? res.envelopeXdr
+        : ((await this.archivedEnvelope?.(txHash)) ?? null);
+    if (!envelope) return null;
 
-    const parsed = TransactionBuilder.fromXDR(res.envelopeXdr, this.networkPassphrase);
+    const parsed = TransactionBuilder.fromXDR(envelope, this.networkPassphrase);
     const tx = "innerTransaction" in parsed ? parsed.innerTransaction : parsed;
     const info: TransactionInfo = {
       memo: memoOf(tx.memo),

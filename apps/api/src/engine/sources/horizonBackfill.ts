@@ -1,3 +1,5 @@
+import { StrKey } from "@stellar/stellar-sdk";
+import type { Asset } from "@webhook/shared";
 import { z } from "zod";
 import { toStroops } from "../../lib/amount.js";
 import { XLM } from "../../lib/stellar.js";
@@ -32,6 +34,9 @@ const recordSchema = z.object({
   asset_issuer: z.string().optional(),
   funder: z.string().optional(),
   account: z.string().optional(),
+  into: z.string().optional(),
+  claimant: z.string().optional(),
+  balance_id: z.string().optional(),
   starting_balance: z.string().optional(),
   asset_balance_changes: z.array(balanceChangeSchema).optional(),
   transaction: z
@@ -81,8 +86,32 @@ function assetOf(part: { asset_type?: string; asset_code?: string; asset_issuer?
   return null;
 }
 
-/** Maps one Horizon payment record to the payments it made to `wallet`. Pure. */
-export function mapHorizonRecord(raw: unknown, wallet: string): NormalizedPayment[] {
+/**
+ * Horizon's balance ID is the XDR form: a 4-byte type (0 = v0) followed by the 32-byte hash.
+ * The B... address encodes a 1-byte type followed by the same hash.
+ */
+function claimableBalanceAddress(balanceId: string): string {
+  return StrKey.encodeClaimableBalance(Buffer.from(`00${balanceId.slice(8)}`, "hex"));
+}
+
+/** What an operation credited to the wallet, taken from its effects. */
+export interface Credit {
+  amount: string;
+  asset: Asset | null;
+}
+
+/** Operation types whose record has no amount; it has to come from the operation's effects. */
+const NEEDS_EFFECTS = new Set(["account_merge", "claim_claimable_balance"]);
+
+/**
+ * Maps one Horizon operation record to the payments it made to `wallet`. Pure.
+ * `credits` is only used for account merges and claimable-balance claims.
+ */
+export function mapHorizonRecord(
+  raw: unknown,
+  wallet: string,
+  credits: Credit[] = [],
+): NormalizedPayment[] {
   const parsed = recordSchema.safeParse(raw);
   if (!parsed.success) return [];
   const record = parsed.data;
@@ -92,9 +121,19 @@ export function mapHorizonRecord(raw: unknown, wallet: string): NormalizedPaymen
     from: string;
     to: string;
     amount: string;
-    asset: ReturnType<typeof assetOf>;
+    asset: Asset | null;
     key: string;
   }[] = [];
+  const credited = (from: string, to: string) =>
+    credits.forEach((credit, index) =>
+      transfers.push({
+        from,
+        to,
+        amount: credit.amount,
+        asset: credit.asset,
+        key: index === 0 ? "" : `-${index}`,
+      }),
+    );
   switch (record.type) {
     case "payment":
     case "path_payment_strict_send":
@@ -120,6 +159,20 @@ export function mapHorizonRecord(raw: unknown, wallet: string): NormalizedPaymen
         });
       }
       break;
+    case "account_merge":
+      // The merged account's whole XLM balance moves to `into`.
+      if (record.account && record.into) credited(record.account, record.into);
+      break;
+    case "claim_claimable_balance":
+      // The sender is the claimable balance itself (its B... address), exactly as in the RPC event.
+      if (
+        record.claimant &&
+        record.balance_id &&
+        /^00000000[0-9a-f]{64}$/.test(record.balance_id)
+      ) {
+        credited(claimableBalanceAddress(record.balance_id), record.claimant);
+      }
+      break;
     case "invoke_host_function":
       (record.asset_balance_changes ?? []).forEach((change, index) => {
         if (change.type === "transfer" && change.from && change.to && change.amount) {
@@ -133,7 +186,7 @@ export function mapHorizonRecord(raw: unknown, wallet: string): NormalizedPaymen
         }
       });
       break;
-    default: // account_merge has no amount on the record; it is rare on testnet and skipped
+    default:
       break;
   }
 
@@ -170,46 +223,130 @@ export function mapHorizonRecord(raw: unknown, wallet: string): NormalizedPaymen
   return payments;
 }
 
+const headSchema = z.object({ id: z.string(), type: z.string(), paging_token: z.string() });
+const effectSchema = z.object({
+  type: z.string(),
+  account: z.string().optional(),
+  amount: z.string().optional(),
+  asset_type: z.string().optional(),
+  asset_code: z.string().optional(),
+  asset_issuer: z.string().optional(),
+});
+const transactionSchema = z.object({ envelope_xdr: z.string() });
+
+type Feed = "payments" | "operations";
+
 export class HorizonBackfillSource {
   constructor(
     private readonly horizonUrl: string,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  /** Pages a wallet's payments in ledger order for ledgers in [fromLedger, toLedgerExclusive). */
+  /**
+   * A wallet's incoming payments for ledgers in [fromLedger, toLedgerExclusive), a page at a time.
+   * Horizon's payments feed covers payments, path payments, account creation, merges and
+   * contract transfers. Claims of claimable balances are only in the operations feed, so that
+   * is paged as well, for claims alone.
+   */
   async *paymentsForWallet(
     wallet: string,
     fromLedger: number,
     toLedgerExclusive: number,
   ): AsyncGenerator<NormalizedPayment[]> {
+    yield* this.feed(
+      "payments",
+      wallet,
+      fromLedger,
+      toLedgerExclusive,
+      (type) => type !== "claim_claimable_balance",
+    );
+    yield* this.feed(
+      "operations",
+      wallet,
+      fromLedger,
+      toLedgerExclusive,
+      (type) => type === "claim_claimable_balance",
+    );
+  }
+
+  /** The transaction envelope (base64 XDR), or null if Horizon does not know the transaction. */
+  async transactionEnvelope(txHash: string): Promise<string | null> {
+    const res = await this.get(`/transactions/${txHash}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Horizon responded ${res.status} for transaction ${txHash}`);
+    return transactionSchema.parse(await res.json()).envelope_xdr;
+  }
+
+  private get(path: string, params: Record<string, string> = {}): Promise<Response> {
+    const url = new URL(path, this.horizonUrl);
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    return this.fetchImpl(url, { signal: AbortSignal.timeout(20_000) });
+  }
+
+  /** What the operation credited to the wallet, from its effects. */
+  private async credits(operationId: string, wallet: string): Promise<Credit[]> {
+    const res = await this.get(`/operations/${operationId}/effects`, { limit: "50" });
+    if (!res.ok)
+      throw new Error(`Horizon responded ${res.status} for effects of operation ${operationId}`);
+    const credits: Credit[] = [];
+    for (const raw of pageSchema.parse(await res.json())._embedded.records) {
+      const effect = effectSchema.safeParse(raw);
+      if (
+        effect.success &&
+        effect.data.type === "account_credited" &&
+        effect.data.account === wallet &&
+        effect.data.amount
+      ) {
+        credits.push({ amount: effect.data.amount, asset: assetOf(effect.data) });
+      }
+    }
+    return credits;
+  }
+
+  private async *feed(
+    feed: Feed,
+    wallet: string,
+    fromLedger: number,
+    toLedgerExclusive: number,
+    accept: (type: string) => boolean,
+  ): AsyncGenerator<NormalizedPayment[]> {
     // Horizon paging tokens are TOIDs: ledger << 32 | txIndex << 12 | opIndex.
     let cursor = (BigInt(Math.max(fromLedger, 0)) << 32n).toString();
     for (;;) {
-      const url = new URL(`/accounts/${wallet}/payments`, this.horizonUrl);
-      url.searchParams.set("join", "transactions");
-      url.searchParams.set("order", "asc");
-      url.searchParams.set("limit", String(PAGE_SIZE));
-      url.searchParams.set("cursor", cursor);
-      const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(20_000) });
+      const res = await this.get(`/accounts/${wallet}/${feed}`, {
+        join: "transactions",
+        order: "asc",
+        limit: String(PAGE_SIZE),
+        cursor,
+      });
       if (res.status === 404) return; // account does not exist (yet)
-      if (!res.ok) throw new Error(`Horizon responded ${res.status} for payments of ${wallet}`);
+      if (!res.ok) throw new Error(`Horizon responded ${res.status} for ${feed} of ${wallet}`);
       const records = pageSchema.parse(await res.json())._embedded.records;
       if (records.length === 0) return;
 
       const page: NormalizedPayment[] = [];
       let reachedEnd = false;
+      let lastToken: string | undefined;
       for (const raw of records) {
-        for (const payment of mapHorizonRecord(raw, wallet)) {
-          if (payment.ledger >= toLedgerExclusive) reachedEnd = true;
-          else if (payment.ledger >= fromLedger) page.push(payment);
+        const head = headSchema.safeParse(raw);
+        if (!head.success) continue;
+        lastToken = head.data.paging_token;
+        if (BigInt(head.data.paging_token) >> 32n >= BigInt(toLedgerExclusive)) {
+          reachedEnd = true;
+          break;
+        }
+        if (!accept(head.data.type)) continue;
+        const credits = NEEDS_EFFECTS.has(head.data.type)
+          ? await this.credits(head.data.id, wallet)
+          : [];
+        for (const payment of mapHorizonRecord(raw, wallet, credits)) {
+          if (payment.ledger >= fromLedger && payment.ledger < toLedgerExclusive)
+            page.push(payment);
         }
       }
       if (page.length > 0) yield page;
-
-      const last = z.object({ paging_token: z.string() }).safeParse(records.at(-1));
-      if (reachedEnd || records.length < PAGE_SIZE || !last.success) return;
-      if (BigInt(last.data.paging_token) >> 32n >= BigInt(toLedgerExclusive)) return;
-      cursor = last.data.paging_token;
+      if (reachedEnd || records.length < PAGE_SIZE || !lastToken) return;
+      cursor = lastToken;
     }
   }
 }

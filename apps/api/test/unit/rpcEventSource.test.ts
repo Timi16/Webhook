@@ -173,6 +173,30 @@ describe("RpcEventSource.resolve", () => {
     expect(payment!.toMuxedId).toBeUndefined();
   });
 
+  it("falls back to Horizon's envelope once the transaction has left RPC's history", async () => {
+    const archived = envelope(muxedWallet, Memo.text("old-order")).toXDR("base64");
+    const asked: string[] = [];
+    const server = { getTransaction: async () => ({ status: "NOT_FOUND" }) };
+    const source = new RpcEventSource(
+      server as never,
+      Networks.TESTNET,
+      () => [wallet],
+      async (hash) => {
+        asked.push(hash);
+        return hash === "old" ? archived : null;
+      },
+    );
+
+    const [resolved, unknown] = await source.resolve([
+      ambiguous("old", "777"),
+      ambiguous("gone", "5"),
+    ]);
+
+    expect(resolved).toMatchObject({ toMuxedId: "777", memo: "old-order", memoType: "text" });
+    expect(unknown).toMatchObject({ memo: "5", memoType: "id" }); // neither RPC nor Horizon knows it
+    expect(asked).toEqual(["old", "gone"]);
+  });
+
   it("only looks up u64 memos, once per transaction, and tolerates a transaction RPC no longer has", async () => {
     const { source, calls } = sourceWith({ aa: envelope(muxedWallet, Memo.text("x")) });
     const plain = makePayment({

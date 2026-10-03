@@ -25,15 +25,17 @@ const alert = createAlerter(env, logger);
 const listener = new PgListener(env.DATABASE_URL, logger);
 
 const watchedSet = new WatchedSet(prisma, logger);
+const horizonBackfill = new HorizonBackfillSource(env.HORIZON_URL);
 const source = new RpcEventSource(
   new rpc.Server(env.STELLAR_RPC_URL, { allowHttp: env.NODE_ENV !== "production" }),
   env.NETWORK_PASSPHRASE,
   () => watchedSet.wallets(),
+  (txHash) => horizonBackfill.transactionEnvelope(txHash),
 );
 const ingestion = new Ingestion({
   prisma,
   source,
-  backfill: new HorizonBackfillSource(env.HORIZON_URL),
+  backfill: horizonBackfill,
   watchedSet,
   networkPassphrase: env.NETWORK_PASSPHRASE,
   logger,
