@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Developer {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime   @default(now())
+  sessions     Session[]
+  apiKeys      ApiKey[]
+  endpoints    Endpoint[]
+  watches      Watch[]
+  events       WebhookEvent[]
+}
+
+model Session {
+  id          String    @id // sha256 of the cookie token, never the token itself
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  ip          String?
+  userAgent   String?
+
+  @@index([developerId])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  name        String
+  prefix      String    // e.g. "whk_test_9f2a" shown in the UI
+  keyHash     String    @unique // sha256 of the full key
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([developerId])
+}
+
+enum EndpointStatus {
+  ACTIVE
+  FAILING
+  DISABLED
+}
+
+model Endpoint {
+  id                  String         @id @default(cuid())
+  developerId         String
+  developer           Developer      @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  url                 String
+  secretEnc           String         // base64(iv | authTag | ciphertext), AES-256-GCM
+  prevSecretEnc       String?
+  prevSecretUntil     DateTime?
+  status              EndpointStatus @default(ACTIVE)
+  consecutiveFailures Int            @default(0) // failed EVENTS in a row, not attempts
+  disabledReason      String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  watches             Watch[]
+  deliveries          Delivery[]
+
+  @@index([developerId])
+}
+
+model Watch {
+  id              String         @id @default(cuid())
+  developerId     String
+  developer       Developer      @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  endpointId      String
+  endpoint        Endpoint       @relation(fields: [endpointId], references: [id])
+  walletAddress   String         // base G address only
+  label           String?
+  assets          Json           // [{ code: "USDC", issuer: "G..." }, { code: "XLM", issuer: null }]
+  amountRule      Json           // { kind: "any" } | { kind: "exact", stroops } | { kind: "min" | "max", stroops } | { kind: "range", min, max }
+  memoRule        Json           // { kind: "any" | "present" | "absent" } | { kind: "equals", value, type }
+  senderAllowlist String[]
+  eventTypes      String[]       @default(["payment.received"])
+  startLedger     Int
+  active          Boolean        @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  matches         PaymentMatch[]
+
+  @@index([walletAddress, active])
+  @@index([developerId])
+}
+
+model ChainPayment {
+  eventId        String         @id // RPC event id, globally unique
+  txHash         String
+  innerTxHash    String?        // set for fee-bump transactions
+  ledger         Int
+  ledgerClosedAt DateTime
+  fromAddress    String
+  toAddress      String         // base G address
+  toMuxedId      String?
+  memo           String?
+  memoType       String         // "none" | "text" | "id" | "hash"
+  assetCode      String
+  assetIssuer    String?        // null = native XLM
+  amountStroops  BigInt
+  eventType      String         // "transfer" | "mint"
+  source         String         // "rpc" | "horizon"
+  createdAt      DateTime       @default(now())
+  matches        PaymentMatch[]
+
+  @@index([toAddress, ledger])
+  @@index([txHash])
+}
+
+enum MatchOutcome {
+  VERIFIED
+  REJECTED
+}
+
+model PaymentMatch {
+  id             String        @id @default(cuid())
+  paymentEventId String
+  payment        ChainPayment  @relation(fields: [paymentEventId], references: [eventId])
+  watchId        String
+  watch          Watch         @relation(fields: [watchId], references: [id])
+  outcome        MatchOutcome
+  reasons        String[]      // e.g. ["WRONG_ISSUER"], empty when VERIFIED
+  createdAt      DateTime      @default(now())
+  event          WebhookEvent?
+
+  @@unique([paymentEventId, watchId])
+  @@index([watchId, createdAt])
+}
+
+model WebhookEvent {
+  id          String        @id // "evt_" + ULID, generated in code
+  developerId String
+  developer   Developer     @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  matchId     String?       @unique // null only for test.ping and system events
+  match       PaymentMatch? @relation(fields: [matchId], references: [id])
+  type        String        // "payment.received" | "payment.rejected" | "test.ping" | "system.network_reset"
+  payload     Json          // frozen at creation
+  createdAt   DateTime      @default(now())
+  deliveries  Delivery[]
+
+  @@index([developerId, createdAt])
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENDING
+  DELIVERED
+  RETRYING
+  FAILED
+  CANCELLED
+}
+
+model Delivery {
+  id             String            @id @default(cuid())
+  eventId        String
+  event          WebhookEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  endpointId     String
+  endpoint       Endpoint          @relation(fields: [endpointId], references: [id])
+  status         DeliveryStatus    @default(PENDING)
+  attemptCount   Int               @default(0)
+  nextAttemptAt  DateTime          @default(now())
+  leaseUntil     DateTime?
+  lastStatusCode Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  attempts       DeliveryAttempt[]
+
+  @@unique([eventId, endpointId])
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, status])
+}
+
+model DeliveryAttempt {
+  id              String   @id @default(cuid())
+  deliveryId      String
+  delivery        Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  number          Int
+  startedAt       DateTime
+  durationMs      Int
+  statusCode      Int?
+  error           String?  // "TIMEOUT" | "DNS" | "CONN_REFUSED" | "TLS" | "SSRF_BLOCKED" | "REDIRECT" | "BODY_TOO_LARGE"
+  responseSnippet String?  // first 1 KB, stored as plain text
+  createdAt       DateTime @default(now())
+
+  @@unique([deliveryId, number])
+}
+
+model Cursor {
+  name               String    @id // "rpc-events"
+  ledger             Int
+  pagingToken        String?
+  networkPassphrase  String
+  lastNetworkResetAt DateTime?
+  updatedAt          DateTime  @updatedAt
+}
