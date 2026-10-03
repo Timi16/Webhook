@@ -36,6 +36,12 @@ export async function processPayment(
   });
   if (fromOtherSource) return SKIPPED;
 
+  const eligible = watches.filter(
+    (w) => w.walletAddress === p.to && w.active && !w.deletedAt && w.startLedger <= p.ledger,
+  );
+  // Nothing is watching this wallet at this ledger (e.g. before every watch's startLedger): no row.
+  if (eligible.length === 0) return SKIPPED;
+
   const { count } = await tx.chainPayment.createMany({
     data: [
       {
@@ -59,10 +65,6 @@ export async function processPayment(
     skipDuplicates: true, // ON CONFLICT (eventId) DO NOTHING
   });
   if (count === 0) return SKIPPED;
-
-  const eligible = watches.filter(
-    (w) => w.walletAddress === p.to && w.active && !w.deletedAt && w.startLedger <= p.ledger,
-  );
 
   let events = 0;
   for (const watch of eligible) {

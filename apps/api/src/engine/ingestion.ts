@@ -88,6 +88,9 @@ export class Ingestion {
         this.deps.logger.error({ err, retryInMs: backoff }, "ingestion pass failed");
         wait = backoff;
         backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
+        // The loop itself is alive (it is backing off), so the watchdog must not restart the worker;
+        // an unreachable RPC shows up as lag and raises the lag alert instead.
+        this.heartbeat = Date.now();
       }
       if (wait > 0) await sleep(wait, signal);
     }

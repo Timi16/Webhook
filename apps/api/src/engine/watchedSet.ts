@@ -1,8 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
-import type { Asset } from "@webhook/shared";
 import { CHANNELS, type PgListener } from "../db/notify.js";
 import type { Logger } from "../lib/logger.js";
-import { assetKey } from "../lib/stellar.js";
 import { parseWatch, type ParsedWatch } from "./watch.js";
 
 const DEBOUNCE_MS = 500;
@@ -68,15 +66,5 @@ export class WatchedSet {
 
   get size(): number {
     return this.byWallet.size;
-  }
-
-  /** Every distinct asset used by an active watch. */
-  assets(): Asset[] {
-    const unique = new Map<string, Asset>();
-    for (const watches of this.byWallet.values()) {
-      for (const watch of watches)
-        for (const asset of watch.assets) unique.set(assetKey(asset), asset);
-    }
-    return [...unique.values()];
   }
 }

@@ -28,7 +28,7 @@ const watchedSet = new WatchedSet(prisma, logger);
 const source = new RpcEventSource(
   new rpc.Server(env.STELLAR_RPC_URL, { allowHttp: env.NODE_ENV !== "production" }),
   env.NETWORK_PASSPHRASE,
-  () => watchedSet.assets(),
+  () => watchedSet.wallets(),
 );
 const ingestion = new Ingestion({
   prisma,

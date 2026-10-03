@@ -1,38 +1,45 @@
-import { xdr, type rpc } from "@stellar/stellar-sdk";
-import type { Asset } from "@webhook/shared";
-import { assetContractId } from "../../lib/stellar.js";
+import { Address, xdr, type rpc } from "@stellar/stellar-sdk";
 import { decodeEvent } from "../decode.js";
 import type { EventCursor, FetchResult, NormalizedPayment, StellarSource } from "../types.js";
 
-// RPC limits: at most 5 filters per request and 5 contract IDs per filter.
+// RPC limits: at most 5 filters per request and 5 topic filters per filter.
 const MAX_FILTERS = 5;
-const MAX_CONTRACTS_PER_FILTER = 5;
 const OLDEST_LEDGER_TTL_MS = 30_000;
 
 const symbol = (name: string) => xdr.ScVal.scvSymbol(name).toXDR("base64");
+const TRANSFER = symbol("transfer");
+const MINT = symbol("mint");
 
 // transfer: [sym, from, to, asset] · mint: [sym, to, asset] (CAP-67) or [sym, admin, to, asset] (older)
-const TOPICS = [
-  [symbol("transfer"), "*", "*", "*"],
-  [symbol("mint"), "*", "*"],
-  [symbol("mint"), "*", "*", "*"],
+const ALL_PAYMENTS: rpc.Api.EventFilter[] = [
+  {
+    type: "contract",
+    topics: [
+      [TRANSFER, "*", "*", "*"],
+      [MINT, "*", "*"],
+      [MINT, "*", "*", "*"],
+    ],
+  },
 ];
 
-/** Filter by the watched assets' contract IDs; if they don't fit, keep only the topic filter. */
-export function buildFilters(assets: Asset[], networkPassphrase: string): rpc.Api.EventFilter[] {
-  const contractIds = assets.map((asset) => assetContractId(asset, networkPassphrase));
-  if (contractIds.length === 0 || contractIds.length > MAX_FILTERS * MAX_CONTRACTS_PER_FILTER) {
-    return [{ type: "contract", topics: TOPICS }];
-  }
-  const filters: rpc.Api.EventFilter[] = [];
-  for (let i = 0; i < contractIds.length; i += MAX_CONTRACTS_PER_FILTER) {
-    filters.push({
+/**
+ * Filters by destination wallet, never by asset contract: a payment in the wrong asset or from
+ * a counterfeit issuer must still be seen so it can be recorded as REJECTED. With more wallets
+ * than fit in one request, every transfer and mint is fetched and filtered in memory instead.
+ */
+export function buildFilters(wallets: string[]): rpc.Api.EventFilter[] {
+  if (wallets.length === 0 || wallets.length > MAX_FILTERS) return ALL_PAYMENTS;
+  return wallets.map((wallet) => {
+    const to = new Address(wallet).toScVal().toXDR("base64");
+    return {
       type: "contract",
-      contractIds: contractIds.slice(i, i + MAX_CONTRACTS_PER_FILTER),
-      topics: TOPICS,
-    });
-  }
-  return filters;
+      topics: [
+        [TRANSFER, "*", to, "*"],
+        [MINT, to, "*"],
+        [MINT, "*", to, "*"],
+      ],
+    };
+  });
 }
 
 type RpcClient = Pick<rpc.Server, "getEvents" | "getHealth" | "getLatestLedger">;
@@ -43,7 +50,7 @@ export class RpcEventSource implements StellarSource {
   constructor(
     private readonly server: RpcClient,
     private readonly networkPassphrase: string,
-    private readonly watchedAssets: () => Asset[],
+    private readonly watchedWallets: () => string[],
   ) {}
 
   async latestLedger(): Promise<number> {
@@ -58,7 +65,7 @@ export class RpcEventSource implements StellarSource {
   }
 
   async fetch(from: EventCursor, limit: number): Promise<FetchResult> {
-    const filters = buildFilters(this.watchedAssets(), this.networkPassphrase);
+    const filters = buildFilters(this.watchedWallets());
     const res = await this.server.getEvents(
       from.pagingToken
         ? { cursor: from.pagingToken, filters, limit }
