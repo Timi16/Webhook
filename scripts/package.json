@@ -10,8 +10,7 @@
     "seed": "tsx --env-file=../apps/api/.env seed.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^17.2.1",
-    "@webhook/api": "workspace:*"
+    "@stellar/stellar-sdk": "^17.2.1"
   },
   "devDependencies": {
     "tsx": "^4.23.15"

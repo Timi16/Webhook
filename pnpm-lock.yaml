@@ -135,9 +135,6 @@ importers:
       '@stellar/stellar-sdk':
         specifier: ^17.2.1
         version: 17.2.1(debug@4.4.3)
-      '@webhook/api':
-        specifier: workspace:*
-        version: link:../apps/api
     devDependencies:
       tsx:
         specifier: ^4.23.15
