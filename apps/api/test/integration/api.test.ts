@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { PrismaClient } from "@prisma/client";
 import { Keypair } from "@stellar/stellar-sdk";
+import * as R from "@webhook/shared";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CHANNELS } from "../../src/db/notify.js";
@@ -1002,6 +1003,155 @@ describe("tenant isolation", () => {
     const endpoint = await prisma.endpoint.findUniqueOrThrow({ where: { id: ids.endpoint! } });
     expect(endpoint).toMatchObject({ description: null, deletedAt: null, prevSecretEnc: null });
     expect((await prisma.watch.findUniqueOrThrow({ where: { id: ids.watch! } })).active).toBe(true);
+  });
+});
+
+describe("documented responses", () => {
+  it("every response matches the schema published in the API reference", async () => {
+    const dev = await t.signup();
+    const key = (await dev.createApiKey()).key;
+    const session = (method: "get" | "post" | "delete", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const api = (method: "get" | "post" | "patch", path: string) =>
+      request(t.app)[method](path).set(bearer(key));
+    // Schemas are strict: an undocumented field fails just like a missing one.
+    const matches = (
+      schema: { parse: (value: unknown) => unknown },
+      res: { status: number; body: unknown },
+      status = 200,
+    ) => {
+      expect(res.status).toBe(status);
+      schema.parse(res.body);
+    };
+
+    matches(R.healthResponse, await request(t.app).get("/health"));
+    matches(R.developerEnvelope, await session("get", "/auth/me"));
+    matches(
+      R.apiKeyCreatedResponse,
+      await session("post", "/v1/api-keys").send({ name: "second" }),
+      201,
+    );
+    matches(R.apiKeyListResponse, await session("get", "/v1/api-keys"));
+
+    const created = await api("post", "/v1/endpoints").send({
+      url: "https://docs.example.com/hook",
+      description: "d",
+    });
+    matches(R.endpointCreatedResponse, created, 201);
+    const endpointId = created.body.endpoint.id as string;
+    matches(R.endpointListResponse, await api("get", "/v1/endpoints"));
+    matches(
+      R.endpointEnvelope,
+      await api("patch", `/v1/endpoints/${endpointId}`).send({ description: null }),
+    );
+    matches(
+      R.rotatedSecretResponse,
+      await api("post", `/v1/endpoints/${endpointId}/rotate-secret`),
+    );
+    matches(R.endpointEnvelope, await api("post", `/v1/endpoints/${endpointId}/enable`));
+    matches(
+      R.replayResponse,
+      await api("post", `/v1/endpoints/${endpointId}/replay`).send({
+        since: "2026-01-01T00:00:00Z",
+      }),
+    );
+
+    const watchBody = {
+      walletAddress: randomAddress(),
+      endpointId,
+      assets: [USDC, XLM],
+      eventTypes: ["payment.received", "payment.rejected"],
+    };
+    const rules = [
+      { amountRule: { kind: "any" }, memoRule: { kind: "any" } },
+      {
+        amountRule: { kind: "min", amount: "5" },
+        memoRule: { kind: "equals", value: "7", type: "id" },
+      },
+      {
+        amountRule: { kind: "range", min: "1", max: "9" },
+        memoRule: { kind: "absent" },
+        label: "ranged",
+      },
+    ];
+    let watchId = "";
+    for (const rule of rules) {
+      const res = await api("post", "/v1/watches").send({ ...watchBody, ...rule });
+      matches(R.watchWithWarningsResponse, res, 201);
+      watchId = res.body.watch.id as string;
+    }
+    matches(R.watchListResponse, await api("get", "/v1/watches"));
+    matches(
+      R.watchWithWarningsResponse,
+      await api("patch", `/v1/watches/${watchId}`).send({ label: "renamed" }),
+    );
+    matches(R.watchEnvelope, await api("post", `/v1/watches/${watchId}/pause`));
+    matches(R.watchEnvelope, await api("post", `/v1/watches/${watchId}/resume`));
+
+    const verified = await pay(watchId, { amountStroops: 50_000_000n });
+    await pay(watchId, {
+      amountStroops: 950_000_000n,
+      memo: "x",
+      memoType: "text",
+      toMuxedId: "12",
+    });
+    matches(R.watchDetailResponse, await api("get", `/v1/watches/${watchId}`));
+    matches(R.paymentListResponse, await api("get", "/v1/payments?limit=1"));
+    matches(R.paymentListResponse, await api("get", "/v1/payments"));
+    matches(R.paymentDetailResponse, await api("get", `/v1/payments/${verified.eventId}`));
+
+    const events = await api("get", "/v1/events");
+    matches(R.eventListResponse, events);
+    const eventId = events.body.data[0].id as string;
+    const deliveryId = events.body.data[0].deliveries[0].id as string;
+    await prisma.deliveryAttempt.create({
+      data: {
+        deliveryId,
+        number: 1,
+        startedAt: new Date(),
+        durationMs: 12,
+        statusCode: 500,
+        error: null,
+        responseSnippet: "oops",
+      },
+    });
+    matches(R.eventDetailResponse, await api("get", `/v1/events/${eventId}`));
+    matches(R.deliveryEnvelope, await api("post", `/v1/events/${eventId}/resend`), 202);
+    matches(R.endpointDetailResponse, await api("get", `/v1/endpoints/${endpointId}`));
+    // Last, because logging in rotates the session used above.
+    matches(
+      R.developerEnvelope,
+      await session("post", "/auth/login").send({ email: dev.email, password: PASSWORD }),
+    );
+    // No worker runs here, so the test ping has no attempt yet: the documented null case.
+    const fast = makeTestApp(db, { testWaitMs: 50 });
+    const fastDev = await fast.signup();
+    const fastKey = (await fastDev.createApiKey()).key;
+    const fastEndpoint = await request(fast.app)
+      .post("/v1/endpoints")
+      .set(bearer(fastKey))
+      .send({ url: "https://ping.example.com" });
+    matches(
+      R.testWebhookResponse,
+      await request(fast.app)
+        .post(`/v1/endpoints/${fastEndpoint.body.endpoint.id}/test`)
+        .set(bearer(fastKey)),
+    );
+  });
+
+  it("the spec carries a response schema for every route that returns a body", () => {
+    const document = generateOpenApiDocument(t.app.locals.registry as OpenAPIRegistry);
+    const missing: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const [method, operation] of Object.entries(item ?? {})) {
+        const responses =
+          (operation as { responses?: Record<string, { content?: unknown }> }).responses ?? {};
+        const success = Object.entries(responses).find(([status]) => status.startsWith("2"));
+        if (success && success[0] !== "204" && !success[1].content)
+          missing.push(`${method} ${path}`);
+      }
+    }
+    expect(missing).toEqual(["get /v1/stream"]); // Server-Sent Events, not JSON
   });
 });
 

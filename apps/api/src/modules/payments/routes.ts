@@ -1,4 +1,9 @@
-import { eventIdParamSchema, listPaymentsQuerySchema } from "@webhook/shared";
+import {
+  eventIdParamSchema,
+  listPaymentsQuerySchema,
+  paymentDetailResponse,
+  paymentListResponse,
+} from "@webhook/shared";
 import { Router } from "express";
 import type { Api } from "../../openapi/registry.js";
 import type { PaymentsService } from "./service.js";
@@ -12,6 +17,7 @@ export function createPaymentsRouter(api: Api, service: PaymentsService): Router
     {
       method: "get",
       path: "/v1/payments",
+      response: paymentListResponse,
       summary: "List detected payments",
       tag,
       auth: "any",
@@ -24,6 +30,7 @@ export function createPaymentsRouter(api: Api, service: PaymentsService): Router
     {
       method: "get",
       path: "/v1/payments/:eventId",
+      response: paymentDetailResponse,
       summary: "Get a payment with rule-by-rule results",
       tag,
       auth: "any",

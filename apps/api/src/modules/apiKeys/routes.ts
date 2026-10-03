@@ -1,4 +1,9 @@
-import { createApiKeySchema, idParamSchema } from "@webhook/shared";
+import {
+  apiKeyCreatedResponse,
+  apiKeyListResponse,
+  createApiKeySchema,
+  idParamSchema,
+} from "@webhook/shared";
 import { Router } from "express";
 import type { Api } from "../../openapi/registry.js";
 import type { ApiKeysService } from "./service.js";
@@ -9,7 +14,14 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
 
   api(
     router,
-    { method: "get", path: "/v1/api-keys", summary: "List API keys", tag, auth: "session" },
+    {
+      method: "get",
+      path: "/v1/api-keys",
+      response: apiKeyListResponse,
+      summary: "List API keys",
+      tag,
+      auth: "session",
+    },
     ({ auth }) => service.list(auth.developerId),
   );
   api(
@@ -17,6 +29,7 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
     {
       method: "post",
       path: "/v1/api-keys",
+      response: apiKeyCreatedResponse,
       summary: "Create an API key (shown once)",
       tag,
       auth: "session",

@@ -1,7 +1,14 @@
 import {
   createEndpointSchema,
+  endpointCreatedResponse,
+  endpointDetailResponse,
+  endpointEnvelope,
+  endpointListResponse,
   idParamSchema,
   replayEndpointSchema,
+  replayResponse,
+  rotatedSecretResponse,
+  testWebhookResponse,
   updateEndpointSchema,
 } from "@webhook/shared";
 import { Router } from "express";
@@ -15,7 +22,14 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
 
   api(
     router,
-    { method: "get", path: "/v1/endpoints", summary: "List endpoints", tag, auth: "any" },
+    {
+      method: "get",
+      path: "/v1/endpoints",
+      response: endpointListResponse,
+      summary: "List endpoints",
+      tag,
+      auth: "any",
+    },
     ({ auth }) => service.list(auth.developerId),
   );
   api(
@@ -23,6 +37,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints",
+      response: endpointCreatedResponse,
       summary: "Create an endpoint (secret shown once)",
       tag,
       auth: "any",
@@ -36,6 +51,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "get",
       path: "/v1/endpoints/:id",
+      response: endpointDetailResponse,
       summary: "Get an endpoint with recent failure stats",
       tag,
       auth: "any",
@@ -48,6 +64,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "patch",
       path: "/v1/endpoints/:id",
+      response: endpointEnvelope,
       summary: "Update an endpoint",
       tag,
       auth: "any",
@@ -74,6 +91,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/rotate-secret",
+      response: rotatedSecretResponse,
       summary: "Rotate the signing secret (old one valid 24 h)",
       tag,
       auth: "any",
@@ -86,6 +104,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/test",
+      response: testWebhookResponse,
       summary: "Send a test.ping and return the first attempt",
       tag,
       auth: "any",
@@ -98,6 +117,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/enable",
+      response: endpointEnvelope,
       summary: "Re-enable a disabled endpoint",
       tag,
       auth: "any",
@@ -110,6 +130,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/replay",
+      response: replayResponse,
       summary: "Requeue failed deliveries since a date (max 1,000)",
       tag,
       auth: "any",

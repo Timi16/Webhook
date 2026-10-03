@@ -1,5 +1,6 @@
 import {
   changePasswordSchema,
+  developerEnvelope,
   forgotPasswordSchema,
   loginSchema,
   resetPasswordSchema,
@@ -46,6 +47,7 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/signup",
+      response: developerEnvelope,
       summary: "Create an account",
       tag: "Auth",
       auth: "none",
@@ -65,6 +67,7 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/login",
+      response: developerEnvelope,
       summary: "Log in",
       tag: "Auth",
       auth: "none",
@@ -105,6 +108,7 @@ export function createAuthRouter(
     {
       method: "get",
       path: "/auth/me",
+      response: developerEnvelope,
       summary: "The logged-in developer",
       tag: "Auth",
       auth: "session",

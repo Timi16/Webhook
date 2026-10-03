@@ -1,4 +1,10 @@
-import { idParamSchema, listEventsQuerySchema } from "@webhook/shared";
+import {
+  deliveryEnvelope,
+  eventDetailResponse,
+  eventListResponse,
+  idParamSchema,
+  listEventsQuerySchema,
+} from "@webhook/shared";
 import { Router } from "express";
 import type { Api } from "../../openapi/registry.js";
 import type { EventsService } from "./service.js";
@@ -12,6 +18,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
     {
       method: "get",
       path: "/v1/events",
+      response: eventListResponse,
       summary: "List webhook events",
       tag,
       auth: "any",
@@ -24,6 +31,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
     {
       method: "get",
       path: "/v1/events/:id",
+      response: eventDetailResponse,
       summary: "Get an event with its payload, deliveries and attempts",
       tag,
       auth: "any",
@@ -36,6 +44,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
     {
       method: "post",
       path: "/v1/events/:id/resend",
+      response: deliveryEnvelope,
       summary: "Resend an event (same Webhook-Id)",
       tag,
       auth: "any",

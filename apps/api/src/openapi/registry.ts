@@ -23,6 +23,8 @@ export interface RouteSpec<
   body?: B;
   query?: Q;
   params?: P;
+  /** Shape of the success response body, for the API reference. */
+  response?: z.ZodType;
   /** Extra middleware, run before authentication. */
   before?: RequestHandler[];
 }
@@ -125,7 +127,10 @@ export function createApi(deps: ApiDeps) {
         ...(spec.body ? { body: { content: { "application/json": { schema: spec.body } } } } : {}),
       },
       responses: {
-        [status]: { description: status === 204 ? "No content" : "Success" },
+        [status]: {
+          description: status === 204 ? "No content" : "Success",
+          ...(spec.response ? { content: { "application/json": { schema: spec.response } } } : {}),
+        },
         400: { description: "Validation failed", content: errorContent },
         ...(spec.auth === "none"
           ? {}
