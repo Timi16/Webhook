@@ -6,6 +6,7 @@ import { Ingestion } from "../../src/engine/ingestion.js";
 import { processPayment } from "../../src/engine/matcher.js";
 import { handleNetworkReset } from "../../src/engine/networkReset.js";
 import { reconcile } from "../../src/engine/reconciliation.js";
+import { runPendingBackfills } from "../../src/engine/watchBackfill.js";
 import { WatchedSet } from "../../src/engine/watchedSet.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { createTestDb, waitFor, type TestDb } from "../helpers/db.js";
@@ -467,6 +468,96 @@ describe("crash safety", () => {
   });
 });
 
+describe("watch backfill", () => {
+  it("is durable, matches payments already recorded for another watch and records the ones nobody saw", async () => {
+    const wallet = randomAddress();
+    const first = await seedTenant(prisma, { walletAddress: wallet, startLedger: 900 });
+    await watchedSet.reload();
+    const seen = [
+      makePayment({ to: wallet, ledger: 910 }),
+      makePayment({ to: wallet, ledger: 920 }),
+    ];
+    source.payments.push(...seen);
+    await ingestion.tick(); // cursor is now at 1000
+    expect(await prisma.webhookEvent.count()).toBe(2);
+
+    // A second developer adds a watch on the same wallet with backfillHours: start ledger in the past.
+    const second = await seedTenant(prisma, {
+      walletAddress: wallet,
+      startLedger: 915,
+      backfillPending: true,
+    });
+    const horizonOnly = makePayment({
+      to: wallet,
+      ledger: 930,
+      source: "horizon",
+      eventId: "hz-930",
+    });
+    const calls: [string, number, number][] = [];
+    const deps = {
+      prisma,
+      watchedSet,
+      logger,
+      backfillWallet: async (w: string, from: number, to: number) => {
+        calls.push([w, from, to]);
+        await prisma.$transaction((tx) => processPayment(tx, horizonOnly, watchedSet.get(w)));
+      },
+    };
+
+    expect(await runPendingBackfills(deps)).toBe(1);
+
+    expect(calls).toEqual([[wallet, 915, 1001]]);
+    const matches = await prisma.paymentMatch.findMany({
+      where: { watchId: second.watch.id },
+      include: { payment: true, event: true },
+    });
+    // Ledger 910 is before the new watch's start ledger; 920 was already recorded; 930 is new.
+    expect(matches.map((m) => m.payment.ledger).sort()).toEqual([920, 930]);
+    expect(matches.every((m) => m.event?.developerId === second.developer.id)).toBe(true);
+    // The first watch also gets the payment only Horizon knew about, and nothing twice.
+    expect(await prisma.paymentMatch.count({ where: { watchId: first.watch.id } })).toBe(3);
+    expect(await prisma.chainPayment.count()).toBe(3);
+    expect(
+      (await prisma.watch.findUniqueOrThrow({ where: { id: second.watch.id } })).backfillPending,
+    ).toBe(false);
+
+    // Running again changes nothing.
+    await prisma.watch.update({ where: { id: second.watch.id }, data: { backfillPending: true } });
+    await runPendingBackfills(deps);
+    expect(await prisma.paymentMatch.count()).toBe(5);
+    expect(await prisma.webhookEvent.count()).toBe(5);
+  });
+
+  it("keeps the request until it succeeds, and drops it for a deleted watch", async () => {
+    const failing = await seedTenant(prisma, { startLedger: 500, backfillPending: true });
+    const deleted = await seedTenant(prisma, {
+      backfillPending: true,
+      active: false,
+      deletedAt: new Date(),
+    });
+    let attempts = 0;
+    const deps = {
+      prisma,
+      watchedSet,
+      logger,
+      backfillWallet: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("Horizon responded 503");
+      },
+    };
+    const pending = async (id: string) =>
+      (await prisma.watch.findUniqueOrThrow({ where: { id } })).backfillPending;
+
+    expect(await runPendingBackfills(deps)).toBe(1); // only the deleted one was settled
+    expect(await pending(failing.watch.id)).toBe(true);
+    expect(await pending(deleted.watch.id)).toBe(false);
+
+    expect(await runPendingBackfills(deps)).toBe(1); // e.g. after a worker restart
+    expect(await pending(failing.watch.id)).toBe(false);
+    expect(attempts).toBe(2);
+  });
+});
+
 describe("Horizon backfill", () => {
   const horizonRecord = (
     wallet: string,
@@ -528,7 +619,8 @@ describe("Horizon backfill", () => {
       amountStroops: 25_000_000n,
     });
     expect(rows[0]!.eventId).toMatch(/^hz-\d+$/);
-    expect(rows[1]).toMatchObject({ memo: "77", memoType: "id", toMuxedId: "77" });
+    // Paid to an M-address with a text memo: the memo is kept and the mux ID reported separately.
+    expect(rows[1]).toMatchObject({ memo: "from-horizon", memoType: "text", toMuxedId: "77" });
     expect(await prisma.webhookEvent.count()).toBe(2);
     expect(await loadCursor(prisma)).toEqual({ ledger: 500 });
   });

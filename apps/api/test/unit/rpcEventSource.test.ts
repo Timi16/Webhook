@@ -1,7 +1,18 @@
-import { Address, Asset, nativeToScVal, Networks, xdr } from "@stellar/stellar-sdk";
+import {
+  Account,
+  Address,
+  Asset,
+  Memo,
+  MuxedAccount,
+  nativeToScVal,
+  Networks,
+  Operation,
+  TransactionBuilder,
+  xdr,
+} from "@stellar/stellar-sdk";
 import { describe, expect, it } from "vitest";
 import { buildFilters, RpcEventSource } from "../../src/engine/sources/rpcEventSource.js";
-import { randomAddress } from "../helpers/payments.js";
+import { makePayment, randomAddress } from "../helpers/payments.js";
 
 const transfer = xdr.ScVal.scvSymbol("transfer").toXDR("base64");
 const mint = xdr.ScVal.scvSymbol("mint").toXDR("base64");
@@ -103,5 +114,86 @@ describe("RpcEventSource.fetch", () => {
     const source = sourceReturning([event("a", 120), event("b", 121)], []);
     const page = await source.fetch({ ledger: 110 }, 2);
     expect(page).toMatchObject({ fetched: 2, next: { ledger: 121 } });
+  });
+});
+
+describe("RpcEventSource.resolve", () => {
+  const wallet = randomAddress();
+  const muxedWallet = new MuxedAccount(new Account(wallet, "0"), "777").accountId();
+
+  function envelope(destination: string, memo?: Memo) {
+    const builder = new TransactionBuilder(new Account(randomAddress(), "1"), {
+      fee: "100",
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(
+        Operation.payment({ destination: randomAddress(), asset: Asset.native(), amount: "1" }),
+      )
+      .addOperation(Operation.payment({ destination, asset: Asset.native(), amount: "5" }));
+    if (memo) builder.addMemo(memo);
+    return builder.setTimeout(0).build().toEnvelope();
+  }
+
+  function sourceWith(transactions: Record<string, ReturnType<typeof envelope>>) {
+    const calls: string[] = [];
+    const server = {
+      getTransaction: async (hash: string) => {
+        calls.push(hash);
+        const envelopeXdr = transactions[hash];
+        return envelopeXdr ? { status: "SUCCESS", envelopeXdr } : { status: "NOT_FOUND" };
+      },
+    };
+    return { source: new RpcEventSource(server as never, Networks.TESTNET, () => [wallet]), calls };
+  }
+
+  // What the decoder produces for any u64 to_muxed_id: an ID memo, ambiguous until resolved.
+  const ambiguous = (txHash: string, id: string) =>
+    makePayment({ to: wallet, txHash, memo: id, memoType: "id", operationIndex: 1 });
+
+  it("W10: a payment to an M-address gets toMuxedId and its real memo back", async () => {
+    const { source } = sourceWith({
+      aa: envelope(muxedWallet, Memo.text("order-9")),
+      bb: envelope(muxedWallet, Memo.hash("cd".repeat(32))),
+    });
+    const [text, hash] = await source.resolve([ambiguous("aa", "777"), ambiguous("bb", "777")]);
+    expect(text).toMatchObject({ toMuxedId: "777", memo: "order-9", memoType: "text" });
+    expect(hash).toMatchObject({ toMuxedId: "777", memo: "cd".repeat(32), memoType: "hash" });
+  });
+
+  it("W10: an M-address payment without a memo keeps the mux ID as its ID memo", async () => {
+    const { source } = sourceWith({ aa: envelope(muxedWallet) });
+    const [payment] = await source.resolve([ambiguous("aa", "777")]);
+    expect(payment).toMatchObject({ toMuxedId: "777", memo: "777", memoType: "id" });
+  });
+
+  it("W11: a genuine ID memo to a plain address is left alone, with no mux ID", async () => {
+    const { source } = sourceWith({ aa: envelope(wallet, Memo.id("424242")) });
+    const [payment] = await source.resolve([ambiguous("aa", "424242")]);
+    expect(payment).toMatchObject({ memo: "424242", memoType: "id" });
+    expect(payment!.toMuxedId).toBeUndefined();
+  });
+
+  it("only looks up u64 memos, once per transaction, and tolerates a transaction RPC no longer has", async () => {
+    const { source, calls } = sourceWith({ aa: envelope(muxedWallet, Memo.text("x")) });
+    const plain = makePayment({
+      to: wallet,
+      txHash: "zz",
+      memo: "hello",
+      memoType: "text",
+      operationIndex: 1,
+    });
+    const none = makePayment({ to: wallet, txHash: "yy", operationIndex: 1 });
+    const gone = ambiguous("missing", "5");
+    const resolved = await source.resolve([
+      plain,
+      none,
+      ambiguous("aa", "777"),
+      ambiguous("aa", "777"),
+      gone,
+    ]);
+    expect(resolved[0]).toBe(plain);
+    expect(resolved[1]).toBe(none);
+    expect(resolved[4]).toBe(gone);
+    expect(calls).toEqual(["aa", "missing"]);
   });
 });

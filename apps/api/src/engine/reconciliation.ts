@@ -36,9 +36,10 @@ export async function reconcile(
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const { payments, next, fetched } = await source.fetch(from, BATCH_LIMIT);
-    const relevant = payments
-      .filter((p) => p.ledger <= cursor.ledger && watchedSet.has(p.to))
-      .map((p) => tagPayment(p, generation));
+    const watched = payments.filter((p) => p.ledger <= cursor.ledger && watchedSet.has(p.to));
+    const relevant = (source.resolve ? await source.resolve(watched) : watched).map((p) =>
+      tagPayment(p, generation),
+    );
     scanned += relevant.length;
     if (relevant.length > 0) {
       await prisma.$transaction(

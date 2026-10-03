@@ -31,20 +31,10 @@ export function createWatchesRepo(prisma: PrismaClient) {
       0,
 
     /** Every write tells the worker to reload its watched set. */
-    async create(
-      developerId: string,
-      data: Omit<Prisma.WatchUncheckedCreateInput, "developerId">,
-      backfillFromLedger?: number,
-    ) {
+    async create(developerId: string, data: Omit<Prisma.WatchUncheckedCreateInput, "developerId">) {
       return prisma.$transaction(async (tx) => {
         const watch = await tx.watch.create({ data: { ...data, developerId } });
         await notify(tx, CHANNELS.watchesChanged);
-        if (backfillFromLedger !== undefined) {
-          await notify(tx, CHANNELS.watchBackfill, {
-            wallet: watch.walletAddress,
-            fromLedger: backfillFromLedger,
-          });
-        }
         return watch;
       });
     },

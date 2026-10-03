@@ -17,6 +17,8 @@ export interface NormalizedPayment {
   amountStroops: bigint;
   eventType: "transfer" | "mint";
   source: "rpc" | "horizon";
+  /** Index of the operation inside its transaction (RPC only); used to resolve muxed destinations. */
+  operationIndex?: number;
 }
 
 export interface EventCursor {
@@ -35,6 +37,11 @@ export interface StellarSource {
   latestLedger(): Promise<number>;
   oldestLedger(): Promise<number>; // start of RPC's retention window
   fetch(from: EventCursor, limit: number): Promise<FetchResult>;
+  /**
+   * Fills in what the event alone cannot say (see RpcEventSource.resolve). Called only for the
+   * payments that are about to be recorded.
+   */
+  resolve?(payments: NormalizedPayment[]): Promise<NormalizedPayment[]>;
 }
 
 export type ReasonCode =

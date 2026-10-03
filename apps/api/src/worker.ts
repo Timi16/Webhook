@@ -4,12 +4,12 @@ import { CHANNELS, PgListener } from "./db/notify.js";
 import { createPrismaClient } from "./db/prisma.js";
 import { Dispatcher } from "./delivery/dispatcher.js";
 import { createSafeHttpClient } from "./delivery/safeHttp.js";
-import { loadCursor } from "./engine/cursor.js";
 import { Ingestion } from "./engine/ingestion.js";
 import { handleNetworkReset } from "./engine/networkReset.js";
 import { reconcile, RECONCILIATION_INTERVAL_MS } from "./engine/reconciliation.js";
 import { HorizonBackfillSource } from "./engine/sources/horizonBackfill.js";
 import { RpcEventSource } from "./engine/sources/rpcEventSource.js";
+import { runPendingBackfills } from "./engine/watchBackfill.js";
 import { Watchdog, WATCHDOG_INTERVAL_MS } from "./engine/watchdog.js";
 import { WatchedSet } from "./engine/watchedSet.js";
 import { createAlerter } from "./lib/alert.js";
@@ -54,42 +54,27 @@ await prisma.$connect();
 await watchedSet.reload();
 watchedSet.start(listener);
 listener.on(CHANNELS.deliveries, () => dispatcher.wake());
-// A watch created with backfillHours: replay that wallet's history up to where the live loop is.
-// They run one at a time from a bounded queue, so a burst of them cannot starve the live loop
-// of database connections or hammer Horizon.
-const MAX_QUEUED_BACKFILLS = 100;
-const backfillQueue: { wallet: string; fromLedger: number }[] = [];
+// Watches created with backfillHours carry a backfillPending flag until their history has been
+// replayed, so the request survives a restart. Backfills run one at a time, never overlapping.
 let backfilling = false;
-
-async function drainBackfills(): Promise<void> {
+function runBackfills(): void {
   if (backfilling) return;
   backfilling = true;
-  try {
-    for (let job = backfillQueue.shift(); job; job = backfillQueue.shift()) {
-      try {
-        await watchedSet.reload();
-        const cursor = await loadCursor(prisma);
-        if (cursor) await ingestion.backfillWallet(job.wallet, job.fromLedger, cursor.ledger + 1);
-      } catch (err) {
-        logger.error({ err, wallet: job.wallet }, "watch backfill failed");
-      }
-    }
-  } finally {
-    backfilling = false;
-  }
+  runPendingBackfills({
+    prisma,
+    watchedSet,
+    logger,
+    backfillWallet: (wallet, from, to) => ingestion.backfillWallet(wallet, from, to),
+  })
+    .catch((err: unknown) => logger.error({ err }, "watch backfills failed"))
+    .finally(() => {
+      backfilling = false;
+    });
 }
-
-listener.on(CHANNELS.watchBackfill, (payload) => {
-  const { wallet, fromLedger } = payload;
-  if (typeof wallet !== "string" || typeof fromLedger !== "number") return;
-  if (backfillQueue.length >= MAX_QUEUED_BACKFILLS) {
-    logger.warn({ wallet }, "backfill queue is full, dropping request");
-    return;
-  }
-  backfillQueue.push({ wallet, fromLedger });
-  void drainBackfills();
-});
+listener.on(CHANNELS.watchesChanged, runBackfills);
+const backfillTimer = setInterval(runBackfills, 30_000);
 await listener.start();
+runBackfills(); // anything requested while the worker was down
 
 const controller = new AbortController();
 const loops = [ingestion.run(controller.signal), dispatcher.run(controller.signal)];
@@ -123,6 +108,7 @@ async function shutdown(signal: string): Promise<void> {
   controller.abort();
   clearInterval(reconciliationTimer);
   clearInterval(watchdogTimer);
+  clearInterval(backfillTimer);
   watchedSet.stop();
   const force = setTimeout(() => process.exit(0), SHUTDOWN_TIMEOUT_MS + 2_000);
   force.unref();

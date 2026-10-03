@@ -162,21 +162,19 @@ export function createWatchesService(repo: WatchesRepo, horizon: HorizonClient, 
       }
       const tip = await currentLedger();
       const startLedger = Math.max(tip + 1 - input.backfillHours * LEDGERS_PER_HOUR, 1);
-      const row = await repo.create(
-        developerId,
-        {
-          endpointId: input.endpointId,
-          walletAddress: input.walletAddress,
-          label: input.label ?? null,
-          assets: input.assets,
-          amountRule: toStoredAmountRule(input.amountRule),
-          memoRule: input.memoRule,
-          senderAllowlist: input.senderAllowlist,
-          eventTypes: input.eventTypes,
-          startLedger,
-        },
-        input.backfillHours > 0 ? startLedger : undefined,
-      );
+      const row = await repo.create(developerId, {
+        endpointId: input.endpointId,
+        walletAddress: input.walletAddress,
+        label: input.label ?? null,
+        assets: input.assets,
+        amountRule: toStoredAmountRule(input.amountRule),
+        memoRule: input.memoRule,
+        senderAllowlist: input.senderAllowlist,
+        eventTypes: input.eventTypes,
+        startLedger,
+        // The worker replays this wallet's history from startLedger and clears the flag when done.
+        backfillPending: input.backfillHours > 0,
+      });
       return { watch: serializeWatch(row), warnings: await warningsFor(developerId, row) };
     },
 

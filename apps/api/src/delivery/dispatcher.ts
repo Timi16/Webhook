@@ -117,6 +117,10 @@ export class Dispatcher {
    * (at most `perDeveloper`), so neither one slow endpoint nor one developer with many slow
    * endpoints can take every slot.
    *
+   * Slots are shared fairly: the developer with the fewest sends in flight is served first, so
+   * a newly due delivery never waits behind other developers' backlogs, however many of them
+   * are slow. It waits at most for one slot to free up (10 s, the send timeout).
+   *
    * A re-claimed crashed send keeps its attempt number: nothing was recorded for it, so it is
    * the same attempt again, not a new one.
    */
@@ -131,7 +135,14 @@ export class Dispatcher {
         SELECT due.id
         FROM "Developer" dev
         CROSS JOIN LATERAL (
-          SELECT per_endpoint.id, per_endpoint."nextAttemptAt"
+          SELECT count(*) AS in_flight
+          FROM "Delivery" s
+          JOIN "Endpoint" se ON se.id = s."endpointId"
+          WHERE se."developerId" = dev.id AND s.status = 'SENDING' AND s."leaseUntil" > now()
+        ) busy
+        CROSS JOIN LATERAL (
+          SELECT per_endpoint.id, per_endpoint."nextAttemptAt",
+                 row_number() OVER (ORDER BY per_endpoint."nextAttemptAt") AS turn
           FROM "Endpoint" e
           CROSS JOIN LATERAL (
             SELECT d.id, d."nextAttemptAt"
@@ -150,13 +161,9 @@ export class Dispatcher {
           ) per_endpoint
           WHERE e."developerId" = dev.id AND e.status <> 'DISABLED'
           ORDER BY per_endpoint."nextAttemptAt"
-          LIMIT GREATEST(0, ${this.perDeveloper} - (
-            SELECT count(*) FROM "Delivery" s
-            JOIN "Endpoint" se ON se.id = s."endpointId"
-            WHERE se."developerId" = dev.id AND s.status = 'SENDING' AND s."leaseUntil" > now()
-          ))
+          LIMIT GREATEST(0, ${this.perDeveloper} - busy.in_flight)
         ) due
-        ORDER BY due."nextAttemptAt"
+        ORDER BY busy.in_flight + due.turn, due."nextAttemptAt"
         LIMIT ${limit}
       )
       RETURNING id, "eventId", "endpointId", "attemptCount"`;

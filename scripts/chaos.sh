@@ -66,7 +66,7 @@ case "${1:-}" in
   kill-worker)
     start_worker
     start_scenario
-    wait_for_log "sent 10/20" 300
+    wait_for_log "sent 10/" 300
     echo "chaos: kill -9 worker mid-burst"
     stop_worker KILL
     sleep 15
@@ -86,7 +86,7 @@ case "${1:-}" in
     SECONDS_DOWN="${2:-60}"
     start_worker
     start_scenario
-    wait_for_log "sent  5/20" 300
+    wait_for_log "sent  5/" 300
     echo "chaos: stopping Postgres for $SECONDS_DOWN s"
     docker compose -f "$ROOT/docker-compose.dev.yml" stop postgres >/dev/null
     sleep 5
@@ -103,7 +103,7 @@ case "${1:-}" in
     SECONDS_DOWN="${2:-300}"
     start_worker
     start_scenario "SCENARIO_WAIT_MS=$(((SECONDS_DOWN + 300) * 1000))"
-    wait_for_log "sending 20 payments" 300
+    wait_for_log "sending " 300
     echo "chaos: pointing the worker at a dead RPC host for $SECONDS_DOWN s"
     stop_worker
     start_worker "STELLAR_RPC_URL=http://127.0.0.1:9"

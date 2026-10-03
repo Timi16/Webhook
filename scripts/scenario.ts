@@ -9,11 +9,20 @@
 // every case (normal, wrong asset, fake-issuer USDC, wrong amount, memo cases, path payment,
 // M-address, issuer mint) and checks: exactly 20 payments with the right outcomes, and one
 // verified, signed webhook per payment.
-import { Account, Asset, Keypair, Memo, MuxedAccount, Operation } from "@stellar/stellar-sdk";
+import {
+  Account,
+  Asset,
+  Claimant,
+  Keypair,
+  Memo,
+  MuxedAccount,
+  Operation,
+} from "@stellar/stellar-sdk";
 import { developerClient, fundWithFriendbot, sleep, submit } from "./lib.js";
 import { startMockReceiver, verifyWebhook } from "./mock-receiver.js";
 
 const RECEIVER_PORT = parseInt(process.env.RECEIVER_PORT ?? "4100", 10);
+const HORIZON_URL = process.env.HORIZON_URL ?? "https://horizon-testnet.stellar.org";
 const WAIT_MS = parseInt(process.env.SCENARIO_WAIT_MS ?? "180000", 10);
 let receiverHealthyAt = 0;
 
@@ -22,7 +31,7 @@ interface Case {
   amount: string;
   asset: "usdc" | "fake" | "xlm";
   memo?: Memo;
-  via?: "payment" | "path" | "muxed" | "mint";
+  via?: "payment" | "path" | "muxed" | "mint" | "claim";
   expect: "VERIFIED" | "REJECTED";
   reasons?: string[];
 }
@@ -30,6 +39,8 @@ interface Case {
 interface ApiPayment {
   id: string;
   amount: string;
+  from: string;
+  toMuxedId: string | null;
   memo: string | null;
   memoType: string;
   asset: { code: string; issuer: string | null };
@@ -189,6 +200,22 @@ const cases: Case[] = [
     expect: "REJECTED",
     reasons: ["WRONG_ASSET", "AMOUNT_BELOW_MIN", "MEMO_MISSING"],
   },
+  {
+    name: "M-address destination with a text memo",
+    amount: "19",
+    asset: "usdc",
+    memo: Memo.text("order-1013"),
+    via: "muxed",
+    expect: "VERIFIED",
+  },
+  {
+    name: "claimed claimable balance",
+    amount: "20",
+    asset: "usdc",
+    memo: Memo.text("claim-1014"),
+    via: "claim",
+    expect: "VERIFIED",
+  },
   ...Array.from({ length: 8 }, (_, i): Case => ({
     name: `burst payment ${i + 1}`,
     amount: String(30 + i),
@@ -215,18 +242,40 @@ console.log(`sending ${cases.length} payments...`);
 for (const [index, c] of cases.entries()) {
   const asset = assets[c.asset];
   const destination = c.via === "muxed" ? muxedWallet : wallet.publicKey();
-  const operation =
-    c.via === "path"
-      ? Operation.pathPaymentStrictSend({
-          sendAsset: asset,
-          sendAmount: c.amount,
-          destination,
-          destAsset: asset,
-          destMin: c.amount,
-          path: [],
-        })
-      : Operation.payment({ destination, asset, amount: c.amount });
-  await submit(c.via === "mint" ? issuer : payer, [operation], c.memo);
+  if (c.via === "claim") {
+    // The payer locks the funds in a claimable balance; the wallet's own claim is the payment.
+    await submit(payer, [
+      Operation.createClaimableBalance({
+        asset,
+        amount: c.amount,
+        claimants: [new Claimant(wallet.publicKey())],
+      }),
+    ]);
+    let balanceId: string | undefined;
+    for (let attempt = 0; attempt < 15 && !balanceId; attempt++) {
+      const res = await fetch(
+        `${HORIZON_URL}/claimable_balances?claimant=${wallet.publicKey()}&limit=1&order=desc`,
+      );
+      const body = (await res.json()) as { _embedded?: { records?: { id: string }[] } };
+      balanceId = body._embedded?.records?.[0]?.id;
+      if (!balanceId) await sleep(2_000);
+    }
+    if (!balanceId) throw new Error("claimable balance did not show up on Horizon");
+    await submit(wallet, [Operation.claimClaimableBalance({ balanceId })], c.memo);
+  } else {
+    const operation =
+      c.via === "path"
+        ? Operation.pathPaymentStrictSend({
+            sendAsset: asset,
+            sendAmount: c.amount,
+            destination,
+            destAsset: asset,
+            destMin: c.amount,
+            path: [],
+          })
+        : Operation.payment({ destination, asset, amount: c.amount });
+    await submit(c.via === "mint" ? issuer : payer, [operation], c.memo);
+  }
   console.log(`  sent ${String(index + 1).padStart(2)}/${cases.length}: ${c.name}`);
 }
 
@@ -264,10 +313,28 @@ for (const c of cases) {
         : ` (found ${found.length} rows)`),
   );
 }
-const muxed = payments.find((p) => p.amount === "17.0000000");
+const byAmount = (amount: string) => payments.find((p) => p.amount === amount);
+const muxed = byAmount("17.0000000");
 check(
-  muxed?.memoType === "id" && muxed.memo === "777",
-  "M-address payment arrives on the base wallet with mux ID 777",
+  muxed?.toMuxedId === "777" && muxed.memoType === "id" && muxed.memo === "777",
+  "M-address payment without a memo: mux ID 777 reported, and standing in as the ID memo",
+);
+const muxedWithMemo = byAmount("19.0000000");
+check(
+  muxedWithMemo?.toMuxedId === "777" &&
+    muxedWithMemo.memoType === "text" &&
+    muxedWithMemo.memo === "order-1013",
+  "M-address payment with a memo: mux ID 777 and the real text memo are both reported",
+);
+const idMemo = byAmount("14.0000000");
+check(
+  idMemo?.memoType === "id" && idMemo.memo === "424242" && idMemo.toMuxedId === null,
+  "a plain ID memo is not mistaken for a mux ID",
+);
+const claimed = byAmount("20.0000000");
+check(
+  claimed?.from.startsWith("B") === true && claimed.memo === "claim-1014",
+  "claimed balance: sender is the claimable balance (B...), memo from the claim",
 );
 const hashed = payments.find((p) => p.amount === "15.0000000");
 check(

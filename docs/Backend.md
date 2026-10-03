@@ -213,7 +213,7 @@ rpcEventSource.ts
 • RPC allows 5 filters per call. With more than 5 watched wallets, keep only the transfer/mint topic filter and filter by wallet in memory.
 • Decode with scValToNative: topics give from, to and the asset string (USDC:G… or native); data gives the amount (i128) and, when present, to_muxed_id. mint has 3 topics (to, asset); the issuer is the sender.
 • The decoder only trusts an event whose contractId is the Stellar Asset Contract of the asset it names. Any contract can emit a transfer event that claims to be USDC.
-• to_muxed_id carries either the destination's mux ID or the transaction memo. Map its type: string → text, u64 → id, bytes → hash (hex). A payment to an M-address therefore surfaces as an ID memo holding the mux ID (and replaces any transaction memo).
+• to_muxed_id carries either the destination's mux ID or the transaction memo. Map its type: string → text, u64 → id, bytes → hash (hex, exactly 32 bytes). A u64 is ambiguous, so for payments about to be recorded the source looks the transaction up (getTransaction, cached per hash): if the operation paid an M-address, toMuxedId is set and the payment gets the transaction's real memo back; the mux ID only stands in as an ID memo when the transaction has none. Horizon-backfilled payments follow the same rule.
 • Spike result (3 Oct 2026, testnet): every classic payment, path payment, account creation, issuer mint and contract transfer produced one event with amount, asset and memo. Soroban transactions cannot carry a memo, so no getTransaction fallback is needed.
 ingestion.ts (main loop)
 loop forever:
@@ -273,7 +273,13 @@ WHERE id IN (
   SELECT due.id
   FROM "Developer" dev
   CROSS JOIN LATERAL (
-    SELECT per_endpoint.id, per_endpoint."nextAttemptAt"
+    SELECT count(*) AS in_flight
+    FROM "Delivery" s JOIN "Endpoint" se ON se.id = s."endpointId"
+    WHERE se."developerId" = dev.id AND s.status = 'SENDING' AND s."leaseUntil" > now()
+  ) busy
+  CROSS JOIN LATERAL (
+    SELECT per_endpoint.id, per_endpoint."nextAttemptAt",
+           row_number() OVER (ORDER BY per_endpoint."nextAttemptAt") AS turn
     FROM "Endpoint" e
     CROSS JOIN LATERAL (
       SELECT d.id, d."nextAttemptAt"
@@ -293,18 +299,13 @@ WHERE id IN (
     ) per_endpoint
     WHERE e."developerId" = dev.id AND e.status <> 'DISABLED'
     ORDER BY per_endpoint."nextAttemptAt"
-    LIMIT GREATEST(0, 10 - (                                     -- this developer's free slots
-      SELECT count(*) FROM "Delivery" s
-      JOIN "Endpoint" se ON se.id = s."endpointId"
-      WHERE se."developerId" = dev.id
-        AND s.status = 'SENDING' AND s."leaseUntil" > now()
-    ))
+    LIMIT GREATEST(0, 10 - busy.in_flight)                       -- this developer's free slots
   ) due
-  ORDER BY due."nextAttemptAt"
+  ORDER BY busy.in_flight + due.turn, due."nextAttemptAt"        -- fewest in flight first
   LIMIT $1                                                       -- free slots, max 20
 )
 RETURNING id, "eventId", "endpointId", "attemptCount";
-Limits are applied as LATERAL … LIMIT per endpoint (5) and per developer (10), not as a filter on already-sending rows: a single claim would otherwise take up to 20 rows for one idle endpoint, and one developer with several slow endpoints could hold every slot.
+Limits are applied as LATERAL … LIMIT per endpoint (5) and per developer (10), not as a filter on already-sending rows: a single claim would otherwise take up to 20 rows for one idle endpoint, and one developer with several slow endpoints could hold every slot. Free slots go to the developer with the fewest sends in flight first, so a newly due delivery never queues behind other developers' backlogs; at worst it waits for one slot to free up (10 s, the send timeout).
 A row re-claimed after an expired lease keeps its attempt number: nothing was recorded for the crashed send, so it is the same attempt again. Webhook-Attempt and the 10-attempt limit therefore count real, recorded attempts.
 Request format
 Header
@@ -743,7 +744,7 @@ Decisions made while building, where the spec was silent or needed a correction.
 • The 5/min auth rate limit applies to the POST /auth routes that take credentials, not to GET /auth/me or logout.
 • Session cookies are Secure only when NODE_ENV=production, so the dashboard works over http://localhost in development.
 • The same transaction reaching us from RPC and from the Horizon backfill (different event IDs) is recorded once: the matcher skips a payment whose transaction hash already exists from the other source.
-• backfillHours (0–24) moves the watch's startLedger back and asks the worker to replay that wallet from Horizon. Payments already recorded for another watch on the same wallet are not re-matched.
+• backfillHours (0–24) moves the watch's startLedger back and sets Watch.backfillPending. The worker (at boot, on watches_changed and every 30 s) first matches payments already recorded for that wallet, then replays the rest from Horizon, and only then clears the flag, so the request survives a restart and is retried after a failure.
 • consecutiveFailures only counts an event's 10th attempt. A resend that fails later goes straight back to FAILED without counting again.
 • An oversized response body records BODY_TOO_LARGE on the attempt, but the delivery outcome still follows the status code.
 • The ingestion heartbeat is also refreshed when a pass fails and backs off: an unreachable RPC raises the lag alert instead of restarting the worker every 60 s.
@@ -753,14 +754,13 @@ Decisions made while building, where the spec was silent or needed a correction.
 • Request logs hold the path only, never the query string, and the Set-Cookie response header is redacted. ?wallet= filters are validated as addresses, so a pasted secret key gets SECRET_KEY_REJECTED.
 • After a testnet reset, every watch whose startLedger is above the new tip is moved to the new tip, so watches keep matching on the new chain.
 • Live streams are capped at 5 per developer (the oldest is closed) and end when their session does: on logout, and for all other sessions on a password change or reset.
-• Watch backfills run one at a time from a queue of at most 100; the cross-source duplicate check holds a per-transaction advisory lock so two sources cannot insert the same payment at once.
+• Watch backfills run one at a time; the cross-source duplicate check holds a per-transaction advisory lock so two sources cannot insert the same payment at once.
 • dueDeliveries (health, alerts) excludes deliveries waiting behind a DISABLED endpoint.
 • Event IDs recorded after a testnet reset are prefixed with r<reset time>-, because ledger positions (and so raw event IDs) start over on the new network.
 • A transfer whose sender is the watched wallet itself (for example a path-payment swap) is not a payment received and is ignored.
 • Creating or resuming a watch needs the current ledger. Horizon's tip is used; if Horizon is down, the worker's cursor is extrapolated by its age at 6 s per ledger (never ahead of the real tip); if neither is available the request gets 503.
 • Per-developer limits: 20 endpoints, 100 watches, 20 active API keys (409 CONFLICT beyond that). Deleted and revoked ones do not count.
 Known limitations
-• A payment to an M-address and a payment with an ID memo are indistinguishable in the RPC event, so both surface as an ID memo.
-• backfillHours is best-effort: the request is lost if the worker is down at that moment, and payments already recorded for another watch on the same wallet are not re-matched.
-• Senders that are claimable balances or liquidity pools are untested; if the SDK cannot decode such an address the event is dropped.
-• Two developers acting together can still occupy all 20 delivery slots (10 each).
+• If a transaction is no longer in RPC's retention window when a u64 memo is resolved, the value is kept as an ID memo (no mux ID). This can only happen on late reconciliation.
+• Claiming a claimable balance is detected live (the sender is the balance's B… address), but Horizon's payments feed does not list claims, so a Horizon backfill does not recover them.
+• With every one of the 20 delivery slots held by slow receivers, a new delivery waits for the first slot to free up: at most the 10 s send timeout.

@@ -62,9 +62,10 @@ export class Ingestion {
 
     const { payments, next, fetched } = await source.fetch(cursor, BATCH_LIMIT);
     const generation = await loadNetworkGeneration(prisma);
-    const relevant = payments
-      .filter((p) => watchedSet.has(p.to))
-      .map((p) => tagPayment(p, generation));
+    const watched = payments.filter((p) => watchedSet.has(p.to));
+    const relevant = (source.resolve ? await source.resolve(watched) : watched).map((p) =>
+      tagPayment(p, generation),
+    );
 
     await prisma.$transaction(
       async (tx) => {

@@ -10,6 +10,7 @@ export interface RpcEventLike {
   ledgerClosedAt: string;
   txHash: string;
   inSuccessfulContractCall: boolean;
+  operationIndex?: number;
   contractId?: { toString(): string } | string;
   topic: xdr.ScVal[];
   value: xdr.ScVal;
@@ -41,7 +42,7 @@ function decodeMemo(raw: unknown): { memo: string | null; memoType: MemoType } |
  *
  * `to_muxed_id` carries the destination's mux ID when it paid an M-address, otherwise the
  * transaction memo: string -> text, u64 -> id, bytes -> hash. The two u64 cases cannot be
- * told apart from the event, so both surface as an ID memo.
+ * told apart from the event; RpcEventSource.resolve settles them from the transaction.
  */
 export function decodeEvent(
   event: RpcEventLike,
@@ -119,5 +120,6 @@ export function decodeEvent(
     amountStroops: amount,
     eventType: kind,
     source: "rpc",
+    ...(event.operationIndex !== undefined ? { operationIndex: event.operationIndex } : {}),
   };
 }

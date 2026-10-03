@@ -166,6 +166,7 @@ model Watch {
   senderAllowlist String[]
   eventTypes      String[]       @default(["payment.received"])
   startLedger     Int
+  backfillPending Boolean        @default(false) // set by backfillHours; cleared by the worker when done
   active          Boolean        @default(true)
   deletedAt       DateTime?
   createdAt       DateTime       @default(now())

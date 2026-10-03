@@ -526,6 +526,36 @@ describe("dispatcher", () => {
     ).toBe(10);
   });
 
+  it("D10: a new developer's delivery is served at the first free slot, even when two others fill all 20", async () => {
+    for (let g = 0; g < 2; g++) {
+      const greedy = await seedDeveloper(prisma);
+      for (let e = 0; e < 4; e++) {
+        const slow = await seedEndpoint(prisma, greedy.id, {
+          url: `${receiver.url}/tarpit-${g}-${e}?mode=slow`,
+        });
+        for (let i = 0; i < 10; i++) await queue(greedy.id, slow.id);
+      }
+    }
+    const dispatcher = makeDispatcher();
+    expect(await dispatcher.tick()).toBe(20); // 10 + 10: every slot is taken, 60 more are queued behind
+
+    const other = await setup("/fast");
+    const quick = await queue(other.developer.id, other.endpoint.id);
+    const controller = new AbortController();
+    const running = dispatcher.run(controller.signal);
+    try {
+      await waitFor(async () => (await delivery(quick.deliveryId)).status === "DELIVERED");
+      // It did not wait for the two backlogs to drain.
+      expect(
+        await prisma.delivery.count({ where: { status: { in: ["PENDING", "SENDING"] } } }),
+      ).toBeGreaterThan(30);
+    } finally {
+      controller.abort();
+      await running;
+      await dispatcher.drain();
+    }
+  }, 30_000);
+
   it("D13: after a secret rotation both signatures are sent for 24 h, then only the new one", async () => {
     const { developer, endpoint } = await setup("/hook?mode=flaky:1");
     const { deliveryId } = await queue(developer.id, endpoint.id);

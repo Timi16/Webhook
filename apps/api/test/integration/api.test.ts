@@ -495,6 +495,19 @@ describe("watches", () => {
     expect(got.body.stats).toEqual({ verified24h: 0, rejected24h: 0 });
   });
 
+  it("backfillHours moves the start ledger back and leaves a durable request for the worker", async () => {
+    const { endpoint } = await createEndpoint();
+    const { watch } = await createWatch(endpoint.id, { backfillHours: 2 });
+    expect(watch.startLedger).toBe(5001 - 2 * 720);
+    expect(
+      (await prisma.watch.findUniqueOrThrow({ where: { id: watch.id } })).backfillPending,
+    ).toBe(true);
+    const plain = await createWatch(endpoint.id);
+    expect(
+      (await prisma.watch.findUniqueOrThrow({ where: { id: plain.watch.id } })).backfillPending,
+    ).toBe(false);
+  });
+
   it("A1: an invalid address is VALIDATION_FAILED; a pasted secret key is SECRET_KEY_REJECTED and never logged", async () => {
     const { endpoint } = await createEndpoint();
     const post = (walletAddress: string) =>

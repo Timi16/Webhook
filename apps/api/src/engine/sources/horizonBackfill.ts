@@ -52,22 +52,25 @@ function memoOf(record: HorizonRecord): {
   memoType: MemoType;
   toMuxedId?: string;
 } {
-  // Same precedence as the RPC events: a muxed destination's ID replaces the transaction memo.
-  if (record.to_muxed_id) {
-    return { memo: record.to_muxed_id, memoType: "id", toMuxedId: record.to_muxed_id };
-  }
+  // Same rule as the RPC source: the transaction memo wins; a muxed destination's ID stands in
+  // as an ID memo only when the transaction has none.
+  const muxed = record.to_muxed_id ? { toMuxedId: record.to_muxed_id } : {};
   const tx = record.transaction;
-  if (!tx?.memo) return { memo: null, memoType: "none" };
+  if (!tx?.memo || !tx.memo_type || tx.memo_type === "none") {
+    return record.to_muxed_id
+      ? { memo: record.to_muxed_id, memoType: "id", ...muxed }
+      : { memo: null, memoType: "none" };
+  }
   switch (tx.memo_type) {
     case "text":
-      return { memo: sanitizeMemoText(tx.memo), memoType: "text" };
+      return { memo: sanitizeMemoText(tx.memo), memoType: "text", ...muxed };
     case "id":
-      return { memo: tx.memo, memoType: "id" };
+      return { memo: tx.memo, memoType: "id", ...muxed };
     case "hash":
     case "return":
-      return { memo: Buffer.from(tx.memo, "base64").toString("hex"), memoType: "hash" };
+      return { memo: Buffer.from(tx.memo, "base64").toString("hex"), memoType: "hash", ...muxed };
     default:
-      return { memo: null, memoType: "none" };
+      return { memo: null, memoType: "none", ...muxed };
   }
 }
 

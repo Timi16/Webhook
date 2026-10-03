@@ -4,6 +4,7 @@ import {
   Asset,
   MuxedAccount,
   nativeToScVal,
+  StrKey,
   Networks,
   xdr,
 } from "@stellar/stellar-sdk";
@@ -163,6 +164,28 @@ describe("decodeEvent", () => {
       topic: [symbol("transfer"), address(from), address(to), text(`USDC:${issuer}`)],
     });
     expect(decodeEvent(spoofed, PASSPHRASE)).toBeNull();
+  });
+
+  it("W10: decodes payments whose sender is a claimable balance or a liquidity pool", () => {
+    const balance = StrKey.encodeClaimableBalance(
+      Buffer.concat([Buffer.from([0]), Buffer.alloc(32, 9)]),
+    );
+    const pool = StrKey.encodeLiquidityPool(Buffer.alloc(32, 7));
+    for (const sender of [balance, pool]) {
+      const payment = decodeEvent(
+        transferEvent({
+          topic: [symbol("transfer"), address(sender), address(to), text("native")],
+          operationIndex: 2,
+        }),
+        PASSPHRASE,
+      );
+      expect(payment).toMatchObject({
+        from: sender,
+        to,
+        amountStroops: 10_000_000n,
+        operationIndex: 2,
+      });
+    }
   });
 
   it("ignores a wallet paying itself, such as a path-payment swap", () => {

@@ -16,8 +16,65 @@ export interface MatchResult {
 const SKIPPED: MatchResult = { inserted: false, matches: 0, events: 0 };
 
 /**
- * Transaction A. The only place that writes payments, matches, events and their first delivery.
- * Must be called inside a Prisma transaction; the unique constraints make re-processing a no-op.
+ * The same transaction can reach us from RPC and from the Horizon backfill under different
+ * event IDs, possibly at the same moment. Holding this lock for the rest of the database
+ * transaction serialises every writer that touches the same Stellar transaction.
+ */
+export async function lockTransaction(tx: Prisma.TransactionClient, txHash: string): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${txHash}))::text`;
+}
+
+/**
+ * Evaluates one watch against a recorded payment and writes the PaymentMatch, plus the
+ * WebhookEvent and its first Delivery when the watch asked for that outcome. Returns whether
+ * an event was created. The caller guarantees the (payment, watch) pair has no match yet.
+ */
+export async function createMatch(
+  tx: Prisma.TransactionClient,
+  p: NormalizedPayment,
+  watch: ParsedWatch,
+  now: Date,
+): Promise<boolean> {
+  const result = evaluateWatch(p, watch);
+  const match = await tx.paymentMatch.create({
+    data: {
+      paymentEventId: p.eventId,
+      watchId: watch.id,
+      outcome: result.outcome,
+      reasons: result.reasons,
+    },
+  });
+
+  const type = result.outcome === "VERIFIED" ? "payment.received" : "payment.rejected";
+  const emits = watch.eventTypes.includes(type);
+  if (emits) {
+    const eventId = newEventId();
+    await tx.webhookEvent.create({
+      data: {
+        id: eventId,
+        developerId: watch.developerId,
+        matchId: match.id,
+        type,
+        payload: buildPaymentPayload({ eventId, type, createdAt: now }, p, watch, result),
+        createdAt: now,
+        deliveries: { create: { endpointId: watch.endpointId, nextAttemptAt: now } },
+      },
+    });
+  }
+
+  await notify(tx, CHANNELS.payments, {
+    developerId: watch.developerId,
+    paymentId: p.eventId,
+    watchId: watch.id,
+    outcome: result.outcome,
+  });
+  return emits;
+}
+
+/**
+ * Transaction A. The only place that records payments, with their matches, events and first
+ * deliveries. Must be called inside a Prisma transaction; the unique constraints make
+ * re-processing a no-op.
  */
 export async function processPayment(
   tx: Prisma.TransactionClient,
@@ -25,10 +82,7 @@ export async function processPayment(
   watches: ParsedWatch[],
   now: Date = new Date(),
 ): Promise<MatchResult> {
-  // The same transaction can reach us from RPC and from the Horizon backfill under different event
-  // IDs, possibly at the same moment (reconciliation vs a watch backfill). Serialise per tx hash
-  // so the check below and the insert cannot interleave.
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${p.innerTxHash ?? p.txHash}))::text`;
+  await lockTransaction(tx, p.innerTxHash ?? p.txHash);
   const hashes = p.innerTxHash ? [p.txHash, p.innerTxHash] : [p.txHash];
   const fromOtherSource = await tx.chainPayment.findFirst({
     where: {
@@ -73,39 +127,7 @@ export async function processPayment(
 
   let events = 0;
   for (const watch of eligible) {
-    const result = evaluateWatch(p, watch);
-    const match = await tx.paymentMatch.create({
-      data: {
-        paymentEventId: p.eventId,
-        watchId: watch.id,
-        outcome: result.outcome,
-        reasons: result.reasons,
-      },
-    });
-
-    const type = result.outcome === "VERIFIED" ? "payment.received" : "payment.rejected";
-    if (watch.eventTypes.includes(type)) {
-      const eventId = newEventId();
-      await tx.webhookEvent.create({
-        data: {
-          id: eventId,
-          developerId: watch.developerId,
-          matchId: match.id,
-          type,
-          payload: buildPaymentPayload({ eventId, type, createdAt: now }, p, watch, result),
-          createdAt: now,
-          deliveries: { create: { endpointId: watch.endpointId, nextAttemptAt: now } },
-        },
-      });
-      events += 1;
-    }
-
-    await notify(tx, CHANNELS.payments, {
-      developerId: watch.developerId,
-      paymentId: p.eventId,
-      watchId: watch.id,
-      outcome: result.outcome,
-    });
+    if (await createMatch(tx, p, watch, now)) events += 1;
   }
   if (events > 0) await notify(tx, CHANNELS.deliveries);
 
