@@ -112,6 +112,7 @@ value, or on any network passphrase other than testnet's.
 | `ENCRYPTION_KEY`                                     | 32 bytes, base64. Encrypts endpoint secrets; losing it means rotating every secret |
 | `RESEND_API_KEY`, `EMAIL_FROM`                       | Optional; emails are logged if the key is absent                                   |
 | `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID` | Optional; alerts are logged if absent                                              |
+| `MAX_CONCURRENT_DELIVERIES`                          | Webhooks sent at the same time, overall. Default 50                                |
 | `ALLOW_INSECURE_WEBHOOK_TARGETS`                     | Local development only; refused in production                                      |
 
 ## API
