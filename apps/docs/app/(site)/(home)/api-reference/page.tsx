@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ApiReference } from '@/components/api-reference';
+import { ApiReferenceFrame } from '@/components/api-reference-frame';
 
 export const metadata: Metadata = {
   title: 'API reference',
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function ApiReferencePage() {
-  return <ApiReference />;
+  return <ApiReferenceFrame />;
 }
