@@ -30,9 +30,6 @@ export function ApiReference() {
         hideClientButton: true,
         // The API only accepts browser requests from the dashboard, so "Test Request" cannot work here.
         hideTestRequestButton: true,
-        // The introduction's "Client Libraries" box is only a language picker and looks empty;
-        // every endpoint has its own language dropdown next to its sample.
-        customCss: '.scalar-reference-intro-clients { display: none; }',
         // Samples default to curl and already carry the API key header.
         defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
         authentication: {
