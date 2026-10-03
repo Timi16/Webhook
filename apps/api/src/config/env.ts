@@ -26,8 +26,16 @@ const envSchema = z.object({
   RESEND_API_KEY: optionalString,
   ALERT_TELEGRAM_BOT_TOKEN: optionalString,
   ALERT_TELEGRAM_CHAT_ID: optionalString,
+  EMAIL_FROM: z.string().min(3).default("Webhook <onboarding@resend.dev>"),
+  // Local development only: lets endpoints use http, any port and private IPs (e.g. the mock receiver).
+  ALLOW_INSECURE_WEBHOOK_TARGETS: z.enum(["true", "false"]).default("false"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
+
+const checkedEnvSchema = envSchema.refine(
+  (env) => !(env.NODE_ENV === "production" && env.ALLOW_INSECURE_WEBHOOK_TARGETS === "true"),
+  { error: "must not be enabled in production", path: ["ALLOW_INSECURE_WEBHOOK_TARGETS"] },
+);
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -37,7 +45,7 @@ export class EnvError extends Error {}
 
 /** Parses raw env. The error names the bad variables but never echoes their values. */
 export function parseEnv(raw: Record<string, string | undefined>): Env {
-  const result = envSchema.safeParse(raw);
+  const result = checkedEnvSchema.safeParse(raw);
   if (!result.success) {
     const lines = result.error.issues.map((issue) => {
       const name = issue.path.join(".");

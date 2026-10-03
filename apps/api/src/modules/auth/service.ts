@@ -1,0 +1,190 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Developer } from "@prisma/client";
+import type { Env } from "../../config/env.js";
+import { AppError } from "../../lib/errors.js";
+import { generateSessionToken } from "../../lib/ids.js";
+import type { Mailer } from "../../lib/mailer.js";
+import {
+  hashPassword,
+  isCommonPassword,
+  verifyAgainstDummy,
+  verifyPassword,
+} from "../../lib/password.js";
+import type { AuthRepo } from "./repo.js";
+
+export const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const RESET_TTL_MS = 60 * 60 * 1000;
+const MAX_LOGIN_DELAY_MS = 4_000;
+
+export interface SessionMeta {
+  ip?: string;
+  userAgent?: string;
+}
+
+export interface PublicDeveloper {
+  id: string;
+  email: string;
+  name: string | null;
+  createdAt: string;
+}
+
+function toPublic(developer: Developer): PublicDeveloper {
+  return {
+    id: developer.id,
+    email: developer.email,
+    name: developer.name,
+    createdAt: developer.createdAt.toISOString(),
+  };
+}
+
+function assertStrongPassword(password: string, field: string): void {
+  if (isCommonPassword(password)) {
+    throw new AppError("VALIDATION_FAILED", `${field}: password_too_common`, {
+      details: [{ path: field, issue: "password_too_common" }],
+    });
+  }
+}
+
+export interface AuthServiceOptions {
+  /** Base of the growing per-account delay after failed logins. 0 disables it (tests). */
+  loginDelayMs?: number;
+}
+
+export function createAuthService(
+  repo: AuthRepo,
+  env: Pick<Env, "SESSION_SECRET" | "DASHBOARD_ORIGIN">,
+  mailer: Mailer,
+  options: AuthServiceOptions = {},
+) {
+  const loginDelayMs = options.loginDelayMs ?? 250;
+  const failures = new Map<string, number>();
+
+  async function startSession(developerId: string, meta: SessionMeta): Promise<string> {
+    const { token, id } = generateSessionToken();
+    await repo.createSession(developerId, {
+      id,
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      ...(meta.ip ? { ip: meta.ip } : {}),
+      ...(meta.userAgent ? { userAgent: meta.userAgent.slice(0, 300) } : {}),
+    });
+    return token;
+  }
+
+  // Stateless reset token: it stops working as soon as the password (hash) changes.
+  function resetSignature(developerId: string, expiresAt: number, passwordHash: string): string {
+    return createHmac("sha256", env.SESSION_SECRET)
+      .update(`reset.${developerId}.${expiresAt}.${passwordHash}`)
+      .digest("hex");
+  }
+
+  return {
+    async signup(input: { email: string; password: string; name?: string }, meta: SessionMeta) {
+      assertStrongPassword(input.password, "password");
+      if (await repo.findDeveloperByEmail(input.email)) {
+        throw new AppError("CONFLICT", "An account with this email already exists");
+      }
+      const developer = await repo.createDeveloper({
+        email: input.email,
+        passwordHash: await hashPassword(input.password),
+        ...(input.name ? { name: input.name } : {}),
+      });
+      return { developer: toPublic(developer), token: await startSession(developer.id, meta) };
+    },
+
+    async login(
+      input: { email: string; password: string },
+      meta: SessionMeta,
+      previousSessionId?: string,
+    ) {
+      const failed = failures.get(input.email) ?? 0;
+      if (failed > 0 && loginDelayMs > 0) {
+        const delay = Math.min(loginDelayMs * 2 ** (failed - 1), MAX_LOGIN_DELAY_MS);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      const developer = await repo.findDeveloperByEmail(input.email);
+      let ok = false;
+      if (developer) ok = await verifyPassword(developer.passwordHash, input.password);
+      else await verifyAgainstDummy(input.password);
+
+      if (!developer || !ok) {
+        if (failures.size > 10_000) failures.clear();
+        failures.set(input.email, failed + 1);
+        // Same error for a wrong email and a wrong password.
+        throw new AppError("UNAUTHENTICATED", "Invalid email or password");
+      }
+      failures.delete(input.email);
+      // Sessions are rotated on login.
+      if (previousSessionId) await repo.deleteSession(previousSessionId);
+      return { developer: toPublic(developer), token: await startSession(developer.id, meta) };
+    },
+
+    async logout(sessionId: string | undefined): Promise<void> {
+      if (sessionId) await repo.deleteSession(sessionId);
+    },
+
+    async me(developerId: string) {
+      const developer = await repo.findDeveloper(developerId);
+      if (!developer)
+        throw new AppError("UNAUTHENTICATED", "A valid session or API key is required");
+      return { developer: toPublic(developer) };
+    },
+
+    async changePassword(
+      developerId: string,
+      sessionId: string | undefined,
+      input: { currentPassword: string; newPassword: string },
+    ): Promise<void> {
+      const developer = await repo.findDeveloper(developerId);
+      if (!developer || !(await verifyPassword(developer.passwordHash, input.currentPassword))) {
+        throw new AppError("VALIDATION_FAILED", "currentPassword: incorrect_password", {
+          details: [{ path: "currentPassword", issue: "incorrect_password" }],
+        });
+      }
+      assertStrongPassword(input.newPassword, "newPassword");
+      await repo.setPassword(developerId, await hashPassword(input.newPassword));
+      await repo.deleteSessions(developerId, sessionId);
+    },
+
+    /** Always succeeds from the caller's point of view (no account enumeration). */
+    async forgotPassword(email: string): Promise<void> {
+      const developer = await repo.findDeveloperByEmail(email);
+      if (!developer) return;
+      const expiresAt = Date.now() + RESET_TTL_MS;
+      const signature = resetSignature(developer.id, expiresAt, developer.passwordHash);
+      const token = `${Buffer.from(`${developer.id}.${expiresAt}`).toString("base64url")}.${signature}`;
+      await mailer.send({
+        to: developer.email,
+        subject: "Reset your Webhook password",
+        text: `Use this link within 1 hour to choose a new password:\n\n${env.DASHBOARD_ORIGIN}/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email.`,
+      });
+    },
+
+    async resetPassword(input: { token: string; newPassword: string }): Promise<void> {
+      const invalid = new AppError("VALIDATION_FAILED", "token: invalid_or_expired_token", {
+        details: [{ path: "token", issue: "invalid_or_expired_token" }],
+      });
+      const [encoded, signature] = input.token.split(".");
+      if (!encoded || !signature) throw invalid;
+      const [developerId, expiresRaw] = Buffer.from(encoded, "base64url")
+        .toString("utf8")
+        .split(".");
+      const expiresAt = /^\d{1,16}$/.test(expiresRaw ?? "") ? parseInt(expiresRaw ?? "", 10) : NaN;
+      if (!developerId || !Number.isFinite(expiresAt) || expiresAt < Date.now()) throw invalid;
+      const developer = await repo.findDeveloper(developerId);
+      if (!developer) throw invalid;
+      const expected = Buffer.from(
+        resetSignature(developer.id, expiresAt, developer.passwordHash),
+        "hex",
+      );
+      const given = Buffer.from(signature, "hex");
+      if (given.length !== expected.length || !timingSafeEqual(given, expected)) throw invalid;
+
+      assertStrongPassword(input.newPassword, "newPassword");
+      await repo.setPassword(developer.id, await hashPassword(input.newPassword));
+      await repo.deleteSessions(developer.id);
+    },
+  };
+}
+
+export type AuthService = ReturnType<typeof createAuthService>;
