@@ -43,7 +43,14 @@ const ingestion = new Ingestion({
     handleNetworkReset({ prisma, networkPassphrase: env.NETWORK_PASSPHRASE, alert, logger }, tip),
 });
 const http = createSafeHttpClient({ allowInsecure: env.ALLOW_INSECURE_WEBHOOK_TARGETS === "true" });
-const dispatcher = new Dispatcher({ prisma, http, env, logger, mailer: createMailer(env, logger) });
+const dispatcher = new Dispatcher({
+  prisma,
+  http,
+  env,
+  logger,
+  mailer: createMailer(env, logger),
+  maxInFlight: env.MAX_CONCURRENT_DELIVERIES,
+});
 const watchdog = new Watchdog({
   prisma,
   source,

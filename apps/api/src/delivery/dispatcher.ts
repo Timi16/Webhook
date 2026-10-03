@@ -49,7 +49,7 @@ export class Dispatcher {
   private wakeUp: (() => void) | undefined;
 
   constructor(private readonly deps: DispatcherDeps) {
-    this.maxInFlight = deps.maxInFlight ?? 20;
+    this.maxInFlight = deps.maxInFlight ?? 50;
     this.perEndpoint = deps.perEndpoint ?? 5;
     this.perDeveloper = deps.perDeveloper ?? 10;
     this.leaseSeconds = deps.leaseSeconds ?? 60;

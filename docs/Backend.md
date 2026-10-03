@@ -261,7 +261,7 @@ Supporting loops
 • networkReset.ts: set the cursor to the new tip, store lastNetworkResetAt, create a system.network_reset event for every active endpoint, alert.
 • horizonBackfill.ts: for each watched wallet, page /accounts/{id}/payments?join=transactions&order=asc from the gap start (plus /operations for claimable-balance claims); map records to NormalizedPayment with source: "horizon" and an eventId derived from the operation ID, so live and backfilled rows never collide.
 Dispatcher (Deliverable 2)
-The dispatcher runs in the worker process, claims due deliveries from Postgres, sends each one through the SSRF-safe client, and records the result. It holds at most 20 sends in flight overall, 10 per developer and 5 per endpoint.
+The dispatcher runs in the worker process, claims due deliveries from Postgres, sends each one through the SSRF-safe client, and records the result. It holds at most 50 sends in flight overall (MAX_CONCURRENT_DELIVERIES), 10 per developer and 5 per endpoint.
 Claiming
 Wakes on LISTEN deliveries, and polls every 1 s as a fallback.
 UPDATE "Delivery"
@@ -302,10 +302,10 @@ WHERE id IN (
     LIMIT GREATEST(0, 10 - busy.in_flight)                       -- this developer's free slots
   ) due
   ORDER BY busy.in_flight + due.turn, due."nextAttemptAt"        -- fewest in flight first
-  LIMIT $1                                                       -- free slots, max 20
+  LIMIT $1                                                       -- free slots, max 50
 )
 RETURNING id, "eventId", "endpointId", "attemptCount";
-Limits are applied as LATERAL … LIMIT per endpoint (5) and per developer (10), not as a filter on already-sending rows: a single claim would otherwise take up to 20 rows for one idle endpoint, and one developer with several slow endpoints could hold every slot. Free slots go to the developer with the fewest sends in flight first, so a newly due delivery never queues behind other developers' backlogs; at worst it waits for one slot to free up (10 s, the send timeout).
+Limits are applied as LATERAL … LIMIT per endpoint (5) and per developer (10), not as a filter on already-sending rows: a single claim would otherwise take every free slot for one idle endpoint, and one developer with several slow endpoints could hold every slot. Free slots go to the developer with the fewest sends in flight first, so a newly due delivery never queues behind other developers' backlogs; at worst it waits for one slot to free up (10 s, the send timeout).
 A row re-claimed after an expired lease keeps its attempt number: nothing was recorded for the crashed send, so it is the same attempt again. Webhook-Attempt and the 10-attempt limit therefore count real, recorded attempts.
 Request format
 Header
@@ -550,6 +550,10 @@ ALLOW_INSECURE_WEBHOOK_TARGETS
 false
 both
 Local development only: allows http, any port and private IPs as webhook targets (the mock receiver). Boot fails if true in production
+MAX_CONCURRENT_DELIVERIES
+50
+worker
+Webhooks sent at the same time, overall (1–200). Per developer (10) and per endpoint (5) are fixed
 LOG_LEVEL
 info
 both
@@ -763,4 +767,4 @@ Decisions made while building, where the spec was silent or needed a correction.
 • When a transaction has already left RPC's history, its envelope is fetched from Horizon instead, so a u64 memo is still resolved correctly on late catch-up or reconciliation.
 • The Horizon backfill also recovers account merges and claims of claimable balances. Their records carry no amount, so it is read from the operation's effects; claims only appear in the operations feed, which is paged for claims alone. A claim's sender is the balance's B… address, the same as in the live event.
 Known limitations
-• With every one of the 20 delivery slots held by slow receivers, a new delivery waits for the first slot to free up: at most the 10 s send timeout.
+• With every one of the 50 delivery slots held by slow receivers, a new delivery waits for the first slot to free up: at most the 10 s send timeout.

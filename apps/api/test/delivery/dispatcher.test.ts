@@ -499,7 +499,7 @@ describe("dispatcher", () => {
     });
   });
 
-  it("D10: one developer with many slow endpoints never holds more than 10 of the 20 slots", async () => {
+  it("D10: one developer with many slow endpoints never holds more than 10 slots", async () => {
     const greedy = await seedDeveloper(prisma);
     for (let e = 0; e < 4; e++) {
       const slow = await seedEndpoint(prisma, greedy.id, {
@@ -526,7 +526,7 @@ describe("dispatcher", () => {
     ).toBe(10);
   });
 
-  it("D10: a new developer's delivery is served at the first free slot, even when two others fill all 20", async () => {
+  it("D10: a new developer's delivery is served at the first free slot, even when two others fill every slot", async () => {
     for (let g = 0; g < 2; g++) {
       const greedy = await seedDeveloper(prisma);
       for (let e = 0; e < 4; e++) {
@@ -536,7 +536,7 @@ describe("dispatcher", () => {
         for (let i = 0; i < 10; i++) await queue(greedy.id, slow.id);
       }
     }
-    const dispatcher = makeDispatcher();
+    const dispatcher = makeDispatcher({ maxInFlight: 20 });
     expect(await dispatcher.tick()).toBe(20); // 10 + 10: every slot is taken, 60 more are queued behind
 
     const other = await setup("/fast");
