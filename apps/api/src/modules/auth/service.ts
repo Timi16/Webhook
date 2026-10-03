@@ -114,8 +114,9 @@ export function createAuthService(
         throw new AppError("UNAUTHENTICATED", "Invalid email or password");
       }
       failures.delete(input.email);
-      // Sessions are rotated on login.
+      // Sessions are rotated on login; expired ones are swept at the same time.
       if (previousSessionId) await repo.deleteSession(previousSessionId);
+      await repo.deleteExpiredSessions();
       return { developer: toPublic(developer), token: await startSession(developer.id, meta) };
     },
 
