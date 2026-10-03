@@ -34,6 +34,14 @@ export async function handleNetworkReset(
       update: { ledger: tip, pagingToken: null, lastNetworkResetAt: now },
     });
 
+    // Ledger numbers start over on the new network. A watch still holding a start ledger from
+    // the old one would ignore every payment until the new chain grew past it.
+    await tx.watch.updateMany({
+      where: { deletedAt: null, startLedger: { gt: tip } },
+      data: { startLedger: tip },
+    });
+    await notify(tx, CHANNELS.watchesChanged);
+
     const endpoints = await tx.endpoint.findMany({
       where: { status: { not: "DISABLED" } },
       select: { id: true, developerId: true },

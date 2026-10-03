@@ -69,10 +69,15 @@ await listener.start();
 const controller = new AbortController();
 const loops = [ingestion.run(controller.signal), dispatcher.run(controller.signal)];
 
+let reconciling = false;
 const reconciliationTimer = setInterval(() => {
-  reconcile({ prisma, source, watchedSet, logger }).catch((err: unknown) =>
-    logger.error({ err }, "reconciliation failed"),
-  );
+  if (reconciling) return; // the previous run is still going
+  reconciling = true;
+  reconcile({ prisma, source, watchedSet, logger })
+    .catch((err: unknown) => logger.error({ err }, "reconciliation failed"))
+    .finally(() => {
+      reconciling = false;
+    });
 }, RECONCILIATION_INTERVAL_MS);
 const watchdogTimer = setInterval(() => {
   watchdog.check().catch((err: unknown) => logger.error({ err }, "watchdog check failed"));

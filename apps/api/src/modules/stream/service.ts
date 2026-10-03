@@ -2,6 +2,7 @@ import type { Response } from "express";
 import { CHANNELS, type Channel, type PgListener } from "../../db/notify.js";
 
 const PING_INTERVAL_MS = 25_000;
+const MAX_STREAMS_PER_DEVELOPER = 5;
 
 const EVENT_NAMES: Partial<Record<Channel, string>> = {
   [CHANNELS.payments]: "payment.detected",
@@ -40,6 +41,13 @@ export class StreamHub {
 
   add(developerId: string, res: Response): void {
     const set = this.clients.get(developerId) ?? new Set<Response>();
+    // A few tabs are fine; beyond that the oldest stream is closed (the browser reconnects if it is still open).
+    while (set.size >= MAX_STREAMS_PER_DEVELOPER) {
+      const oldest = set.values().next().value;
+      if (!oldest) break;
+      set.delete(oldest);
+      oldest.end();
+    }
     set.add(res);
     this.clients.set(developerId, set);
     res.on("close", () => {

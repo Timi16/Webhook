@@ -351,6 +351,7 @@ describe("ingestion and matching", () => {
     const a = await seedTenant(prisma);
     const b = await seedTenant(prisma);
     const disabled = await seedEndpoint(prisma, a.developer.id, { status: "DISABLED" });
+    await prisma.watch.update({ where: { id: a.watch.id }, data: { startLedger: 499_000 } });
     await saveCursor(prisma, { ledger: 500_000, pagingToken: "old-token" }, env.NETWORK_PASSPHRASE);
     source.tip = 120; // the tip ledger dropped
 
@@ -367,6 +368,22 @@ describe("ingestion and matching", () => {
     );
     expect(events.flatMap((e) => e.deliveries.map((d) => d.endpointId))).not.toContain(disabled.id);
     expect(alert).toHaveBeenCalledOnce();
+
+    // Watches keep working on the new chain: a start ledger from the old network is pulled back.
+    expect((await prisma.watch.findUniqueOrThrow({ where: { id: a.watch.id } })).startLedger).toBe(
+      120,
+    );
+    expect((await prisma.watch.findUniqueOrThrow({ where: { id: b.watch.id } })).startLedger).toBe(
+      1,
+    );
+    await prisma.webhookEvent.deleteMany();
+    await watchedSet.reload();
+    source.payments.push(makePayment({ to: a.watch.walletAddress, ledger: 125 }));
+    source.tip = 130;
+    await ingestion.tick();
+    expect(await prisma.webhookEvent.count({ where: { type: "payment.received" } })).toBe(1);
+    source.tip = 120;
+    await saveCursor(prisma, { ledger: 120 }, env.NETWORK_PASSPHRASE);
 
     // A small dip (RPC node slightly behind) is not a reset.
     alert.mockClear();
@@ -515,5 +532,27 @@ describe("Horizon backfill", () => {
     expect(second.inserted).toBe(false);
     expect(await prisma.chainPayment.count()).toBe(1);
     expect(await prisma.webhookEvent.count()).toBe(1);
+  });
+
+  it("still records another wallet's payment from the same transaction when it arrives from the other source", async () => {
+    const first = await seedTenant(prisma);
+    const second = await seedTenant(prisma);
+    await watchedSet.reload();
+    const txHash = "ab".repeat(32);
+    const toFirst = makePayment({ to: first.watch.walletAddress, txHash, source: "rpc" });
+    const toSecond = makePayment({
+      to: second.watch.walletAddress,
+      txHash,
+      source: "horizon",
+      eventId: "hz-999",
+    });
+
+    await prisma.$transaction((tx) => processPayment(tx, toFirst, watchedSet.get(toFirst.to)));
+    const result = await prisma.$transaction((tx) =>
+      processPayment(tx, toSecond, watchedSet.get(toSecond.to)),
+    );
+
+    expect(result.inserted).toBe(true);
+    expect(await prisma.webhookEvent.count()).toBe(2);
   });
 });

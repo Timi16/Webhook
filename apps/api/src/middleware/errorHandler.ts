@@ -21,8 +21,17 @@ function toAppError(err: unknown): AppError | undefined {
     case "entity.too.large":
       return new AppError("VALIDATION_FAILED", "Request body is too large", { status: 413 });
     default:
-      return undefined;
+      break;
   }
+  // Express and body-parser signal other client mistakes (bad percent-encoding, unsupported
+  // charset, aborted body) with a 4xx status on the error.
+  if (typeof err === "object" && err !== null && "status" in err) {
+    const status = err.status;
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      return new AppError("VALIDATION_FAILED", "Malformed request", { status });
+    }
+  }
+  return undefined;
 }
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {

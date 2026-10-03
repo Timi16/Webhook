@@ -30,6 +30,8 @@ export async function processPayment(
   const fromOtherSource = await tx.chainPayment.findFirst({
     where: {
       source: { not: p.source },
+      // Per wallet: one transaction can pay several watched wallets, each seen by a different source.
+      toAddress: p.to,
       OR: [{ txHash: { in: hashes } }, { innerTxHash: { in: hashes } }],
     },
     select: { eventId: true },

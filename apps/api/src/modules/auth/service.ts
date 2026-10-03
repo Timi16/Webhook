@@ -83,11 +83,20 @@ export function createAuthService(
       if (await repo.findDeveloperByEmail(input.email)) {
         throw new AppError("CONFLICT", "An account with this email already exists");
       }
-      const developer = await repo.createDeveloper({
-        email: input.email,
-        passwordHash: await hashPassword(input.password),
-        ...(input.name ? { name: input.name } : {}),
-      });
+      const passwordHash = await hashPassword(input.password);
+      const developer = await repo
+        .createDeveloper({
+          email: input.email,
+          passwordHash,
+          ...(input.name ? { name: input.name } : {}),
+        })
+        .catch((err: unknown) => {
+          // Two signups for the same email raced past the check above; the unique index decides.
+          if (typeof err === "object" && err !== null && "code" in err && err.code === "P2002") {
+            throw new AppError("CONFLICT", "An account with this email already exists");
+          }
+          throw err;
+        });
       return { developer: toPublic(developer), token: await startSession(developer.id, meta) };
     },
 

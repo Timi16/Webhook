@@ -75,6 +75,9 @@ describe("auth", () => {
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
     const token = cookie.split(";")[0]!.slice("whk_session=".length);
+    expect(t.logs()).toContain("/auth/signup");
+    expect(t.logs()).not.toContain(token); // the Set-Cookie header is redacted in request logs
+    expect(t.logs()).toContain('"set-cookie":"[redacted]"');
     const session = await prisma.session.findUniqueOrThrow({ where: { id: sha256Hex(token) } });
     expect(session.developerId).toBe(res.body.developer.id);
     expect(session.expiresAt.getTime() - Date.now()).toBeGreaterThan(13.9 * 24 * 3600 * 1000);
@@ -272,6 +275,28 @@ describe("API keys", () => {
     expect(res.body.error.code).toBe("UNAUTHENTICATED");
     // Kept for history.
     expect((await prisma.apiKey.findUniqueOrThrow({ where: { id } })).revokedAt).not.toBeNull();
+  });
+
+  it("accepts the Bearer scheme in any case", async () => {
+    const res = await request(t.app).get("/v1/watches").set("Authorization", `bearer ${aliceKey}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("answers malformed percent-encoding with 400, not 500", async () => {
+    const res = await request(t.app).get("/v1/watches/%E0%A4%A").set(bearer(aliceKey));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("two signups racing for the same email give one account and one 409", async () => {
+    const body = { email: "race@example.com", password: PASSWORD };
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        request(t.app).post("/auth/signup").set("Origin", ORIGIN).send(body),
+      ),
+    );
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409]);
+    expect(await prisma.developer.count({ where: { email: "race@example.com" } })).toBe(1);
   });
 
   it("rejects missing, malformed and unknown credentials", async () => {

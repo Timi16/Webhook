@@ -52,9 +52,10 @@ export function createAuth(prisma: PrismaClient) {
   const requireAny: RequestHandler = async (req, _res, next) => {
     const header = req.get("authorization");
     // A Bearer header is never ignored: a bad key is a 401 even if a session cookie is present.
-    const auth = header?.startsWith("Bearer ")
-      ? await fromApiKey(header.slice(7).trim())
-      : await fromSession(req);
+    const auth =
+      header && /^bearer /i.test(header)
+        ? await fromApiKey(header.slice(7).trim())
+        : await fromSession(req);
     if (!auth) throw unauthenticated();
     req.auth = auth;
     next();

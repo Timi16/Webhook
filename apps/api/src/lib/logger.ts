@@ -6,6 +6,7 @@ export type { Logger };
 export const REDACT_PATHS = [
   "req.headers.authorization",
   "req.headers.cookie",
+  'res.headers["set-cookie"]',
   "*.password",
   "*.secret",
   "*.apiKey",
