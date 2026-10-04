@@ -6,7 +6,12 @@ import { Ingestion } from "../../src/engine/ingestion.js";
 import { processPayment } from "../../src/engine/matcher.js";
 import { handleNetworkReset } from "../../src/engine/networkReset.js";
 import { reconcile } from "../../src/engine/reconciliation.js";
-import { runPendingBackfills } from "../../src/engine/watchBackfill.js";
+import {
+  matchRecordedPayments,
+  RECORDED_PAGE,
+  runPendingBackfills,
+} from "../../src/engine/watchBackfill.js";
+import { parseWatch } from "../../src/engine/watch.js";
 import { WatchedSet } from "../../src/engine/watchedSet.js";
 import { createLogger } from "../../src/lib/logger.js";
 import { createTestDb, waitFor, type TestDb } from "../helpers/db.js";
@@ -520,6 +525,47 @@ describe("crash safety", () => {
     expect(await prisma.webhookEvent.count()).toBe(2);
   });
 
+  it("W14: a batch that cannot be committed is retried with fewer events, then grows back", async () => {
+    const limits: number[] = [];
+    const fetch = source.fetch.bind(source);
+    source.fetch = async (from, limit) => {
+      limits.push(limit);
+      return fetch(from, limit);
+    };
+    const good = await seedTenant(prisma);
+    const developer = await seedDeveloper(prisma);
+    const endpoint = await seedEndpoint(prisma, developer.id);
+    const doomed = await seedWatch(prisma, developer.id, endpoint.id);
+    await watchedSet.reload();
+    // The in-memory watch points at an endpoint that does not exist, so its batch always fails.
+    watchedSet.get(doomed.walletAddress)[0]!.endpointId = "missing-endpoint";
+    for (let i = 0; i < 6; i++)
+      source.payments.push(makePayment({ to: good.watch.walletAddress, ledger: 910 + i }));
+    source.payments.push(makePayment({ to: doomed.walletAddress, ledger: 920 }));
+
+    await expect(ingestion.tick()).rejects.toThrow();
+    await expect(ingestion.tick()).rejects.toThrow();
+    await expect(ingestion.tick()).rejects.toThrow();
+    expect(limits).toEqual([200, 100, 50]);
+    expect(await prisma.chainPayment.count()).toBe(0);
+
+    // Keep halving. At 6 the batch holds only the good payments in front of the bad one: they
+    // commit and the cursor moves, instead of everything waiting behind it for ever. A batch
+    // that commits lets the size grow again.
+    for (let i = 0; i < 4; i++) await ingestion.tick().catch(() => {});
+    expect(limits.slice(0, 7)).toEqual([200, 100, 50, 25, 12, 6, 12]);
+    expect(await prisma.chainPayment.count()).toBe(6);
+    const committedAt = limits.length;
+
+    // Once the bad watch is fixed, everything lands exactly once and the batch size recovers.
+    await watchedSet.reload();
+    await drain();
+    await ingestion.tick();
+    expect(await prisma.chainPayment.count()).toBe(7);
+    expect(await prisma.paymentMatch.count()).toBe(7);
+    expect(Math.max(...limits.slice(committedAt))).toBeGreaterThan(6);
+  });
+
   it("an RPC failure leaves the cursor where it was", async () => {
     source.failNextFetch = true;
     await expect(ingestion.tick()).rejects.toThrow("RPC unreachable");
@@ -602,6 +648,39 @@ describe("watch backfill", () => {
     await runPendingBackfills(deps);
     expect(await prisma.paymentMatch.count()).toBe(5);
     expect(await prisma.webhookEvent.count()).toBe(5);
+  });
+
+  it("reads a long recorded history a page at a time and still matches every payment once", async () => {
+    const tenant = await seedTenant(prisma);
+    const total = RECORDED_PAGE + 7;
+    await prisma.chainPayment.createMany({
+      data: Array.from({ length: total }, (_, i) => {
+        const p = makePayment({ to: tenant.watch.walletAddress, ledger: 100 + i });
+        return {
+          eventId: p.eventId,
+          txHash: p.txHash,
+          ledger: p.ledger,
+          ledgerClosedAt: p.ledgerClosedAt,
+          fromAddress: p.from,
+          toAddress: p.to,
+          memo: p.memo,
+          memoType: p.memoType,
+          assetCode: p.asset.code,
+          assetIssuer: p.asset.issuer,
+          amountStroops: p.amountStroops,
+          eventType: p.eventType,
+          source: p.source,
+        };
+      }),
+    });
+    const late = await seedWatch(prisma, tenant.developer.id, tenant.endpoint.id, {
+      walletAddress: tenant.watch.walletAddress,
+      startLedger: 100,
+    });
+    const row = await prisma.watch.findUniqueOrThrow({ where: { id: late.id } });
+    expect(await matchRecordedPayments(prisma, parseWatch(row), 5000)).toBe(total);
+    expect(await prisma.paymentMatch.count({ where: { watchId: late.id } })).toBe(total);
+    expect(await matchRecordedPayments(prisma, parseWatch(row), 5000)).toBe(0);
   });
 
   it("keeps the request until it succeeds, and drops it for a deleted watch", async () => {

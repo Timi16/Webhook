@@ -34,6 +34,9 @@ function fromRow(row: ChainPayment): NormalizedPayment {
   };
 }
 
+/** How many recorded payments a watch backfill reads at a time. */
+export const RECORDED_PAGE = 500;
+
 /** Rows recorded on an earlier testnet (before the last reset) never belong to a backfill. */
 function isCurrentNetwork(eventId: string, generation: string | null): boolean {
   return generation ? eventId.startsWith(`r${generation}-`) : !/^r[0-9a-z]+-/.test(eventId);
@@ -50,30 +53,47 @@ export async function matchRecordedPayments(
   now: Date = new Date(),
 ): Promise<number> {
   const generation = await loadNetworkGeneration(prisma);
-  const rows = await prisma.chainPayment.findMany({
-    where: {
-      toAddress: watch.walletAddress,
-      ledger: { gte: watch.startLedger, lte: upToLedger },
-      matches: { none: { watchId: watch.id } },
-    },
-    orderBy: [{ ledger: "asc" }, { eventId: "asc" }],
-  });
-
   let added = 0;
-  for (const row of rows) {
-    if (!isCurrentNetwork(row.eventId, generation)) continue;
-    await prisma.$transaction(async (tx) => {
-      await lockTransaction(tx, row.innerTxHash ?? row.txHash);
-      // The live loop may have matched it since we looked.
-      const existing = await tx.paymentMatch.findUnique({
-        where: { paymentEventId_watchId: { paymentEventId: row.eventId, watchId: watch.id } },
-      });
-      if (existing) return;
-      if (await createMatch(tx, fromRow(row), watch, now)) await notify(tx, CHANNELS.deliveries);
-      added += 1;
+  // A busy wallet can have a very long history, so it is read a page at a time, each page
+  // starting after the last row of the one before.
+  let after: { ledger: number; eventId: string } | undefined;
+  for (;;) {
+    const rows = await prisma.chainPayment.findMany({
+      where: {
+        toAddress: watch.walletAddress,
+        ledger: { gte: watch.startLedger, lte: upToLedger },
+        matches: { none: { watchId: watch.id } },
+        ...(after
+          ? {
+              OR: [
+                { ledger: { gt: after.ledger } },
+                { ledger: after.ledger, eventId: { gt: after.eventId } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ ledger: "asc" }, { eventId: "asc" }],
+      take: RECORDED_PAGE,
     });
+
+    for (const row of rows) {
+      if (!isCurrentNetwork(row.eventId, generation)) continue;
+      await prisma.$transaction(async (tx) => {
+        await lockTransaction(tx, row.innerTxHash ?? row.txHash);
+        // The live loop may have matched it since we looked.
+        const existing = await tx.paymentMatch.findUnique({
+          where: { paymentEventId_watchId: { paymentEventId: row.eventId, watchId: watch.id } },
+        });
+        if (existing) return;
+        if (await createMatch(tx, fromRow(row), watch, now)) await notify(tx, CHANNELS.deliveries);
+        added += 1;
+      });
+    }
+
+    const last = rows.at(-1);
+    if (!last || rows.length < RECORDED_PAGE) return added;
+    after = { ledger: last.ledger, eventId: last.eventId };
   }
-  return added;
 }
 
 /**

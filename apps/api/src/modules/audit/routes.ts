@@ -36,6 +36,42 @@ export function createAuditWriter(prisma: PrismaClient, logger: Logger) {
   };
 }
 
+/** At most this many failed logins are recorded per account per hour. */
+const FAILED_LOGINS_PER_HOUR = 20;
+
+/**
+ * Puts a wrong-password attempt on the account's record. Capped per hour so that someone
+ * guessing passwords cannot bury the rest of the log; the first attempts are what matter.
+ */
+export function createFailedLoginRecorder(prisma: PrismaClient, logger: Logger) {
+  const write = createAuditWriter(prisma, logger);
+  return (developerId: string, ip: string | null): void => {
+    void (async () => {
+      const recent = await prisma.auditLog.count({
+        where: {
+          developerId,
+          action: "account.login_failed",
+          createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+        },
+      });
+      if (recent >= FAILED_LOGINS_PER_HOUR) return;
+      await write({
+        developerId,
+        action: "account.login_failed",
+        targetId: null,
+        targetLabel: null,
+        detail:
+          recent + 1 === FAILED_LOGINS_PER_HOUR
+            ? "further attempts this hour are not listed"
+            : null,
+        actor: "session",
+        apiKeyId: null,
+        ip,
+      });
+    })().catch((err: unknown) => logger.error({ err }, "failed login could not be recorded"));
+  };
+}
+
 export function createAuditRouter(api: Api, prisma: PrismaClient): Router {
   const router = Router();
 

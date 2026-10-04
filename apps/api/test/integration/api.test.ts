@@ -1809,18 +1809,43 @@ describe("audit log", () => {
       .set("Origin", ORIGIN)
       .set("Cookie", cookie)
       .send({ currentPassword: PASSWORD, newPassword: "another long passphrase" });
+    await waitFor(
+      async () => (await prisma.auditLog.count({ where: { action: "account.login_failed" } })) > 0,
+    );
     const res = await request(t.app).get("/v1/audit-log?logins=true").set("Cookie", cookie);
     expect(res.body.data.map((r: { action: string }) => r.action)).toEqual([
       "account.password_changed",
+      "account.login_failed",
       "account.logged_in",
       "account.created",
     ]);
-    // Logins are noise next to real changes, so they are left out unless asked for.
+    // Successful logins are noise next to real changes, so they are left out unless asked for.
+    // A wrong password is a warning sign and always shows.
     const quiet = await request(t.app).get("/v1/audit-log").set("Cookie", cookie);
     expect(quiet.body.data.map((r: { action: string }) => r.action)).toEqual([
       "account.password_changed",
+      "account.login_failed",
       "account.created",
     ]);
+
+    // Guessing at an email with no account records nothing, and a flood of guesses is capped.
+    await request(t.app)
+      .post("/auth/login")
+      .set("Origin", ORIGIN)
+      .send({ email: "nobody-here@example.com", password: "wrong password" });
+    for (let i = 0; i < 25; i++) {
+      await request(t.app)
+        .post("/auth/login")
+        .set("Origin", ORIGIN)
+        .send({ email: dev.email, password: "wrong password" });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const failed = await prisma.auditLog.findMany({
+      where: { developerId: dev.developerId, action: "account.login_failed" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(failed).toHaveLength(20);
+    expect(failed[0]!.detail).toBe("further attempts this hour are not listed");
     expect(JSON.stringify(res.body)).not.toContain("another long passphrase");
   });
 });

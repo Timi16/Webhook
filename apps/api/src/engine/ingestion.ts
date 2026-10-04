@@ -13,6 +13,8 @@ const RESET_THRESHOLD_LEDGERS = 100;
 /** How long the network must keep looking reset before we act on it. */
 const RESET_CONFIRM_MS = 60_000;
 const TX_TIMEOUT_MS = 15_000;
+/** A single event is given this long: with a batch of one there is nothing left to shrink. */
+const SINGLE_EVENT_TIMEOUT_MS = 120_000;
 const MAX_BACKOFF_MS = 30_000;
 const BUSY_WALLET_EVENTS_PER_MIN = 600;
 
@@ -33,6 +35,12 @@ export class Ingestion {
   heartbeat = Date.now();
   /** When the tip first looked far behind the cursor; cleared as soon as it looks normal again. */
   private resetSuspectedAt: number | null = null;
+  /**
+   * How many events the next pass reads. It halves each time a batch cannot be committed (a
+   * wallet with very many watches can make a full batch outlast the transaction timeout, and the
+   * same batch would fail for ever) and doubles back after each batch that commits.
+   */
+  private batchLimit = BATCH_LIMIT;
   private readonly busy = new Map<
     string,
     { windowStart: number; count: number; warned: boolean }
@@ -80,26 +88,41 @@ export class Ingestion {
       return 0;
     }
 
-    const { payments, next, fetched } = await source.fetch(cursor, BATCH_LIMIT);
+    const limit = this.batchLimit;
+    const { payments, next, fetched } = await source.fetch(cursor, limit);
     const generation = await loadNetworkGeneration(prisma);
     const watched = payments.filter((p) => watchedSet.has(p.to));
     const relevant = (source.resolve ? await source.resolve(watched) : watched).map((p) =>
       tagPayment(p, generation),
     );
 
-    await prisma.$transaction(
-      async (tx) => {
-        const endpoints: EndpointEvents = new Map();
-        for (const p of relevant)
-          await processPayment(tx, p, watchedSet.get(p.to), new Date(), endpoints);
-        await saveCursor(tx, next, networkPassphrase); // saved even when nothing was relevant
-      },
-      { timeout: TX_TIMEOUT_MS },
-    );
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          const endpoints: EndpointEvents = new Map();
+          for (const p of relevant)
+            await processPayment(tx, p, watchedSet.get(p.to), new Date(), endpoints);
+          await saveCursor(tx, next, networkPassphrase); // saved even when nothing was relevant
+        },
+        { timeout: limit === 1 ? SINGLE_EVENT_TIMEOUT_MS : TX_TIMEOUT_MS },
+      );
+    } catch (err) {
+      // Nothing was committed and the cursor has not moved: the next pass re-reads from the same
+      // place with half as many events.
+      if (limit > 1) {
+        this.batchLimit = Math.max(1, Math.floor(limit / 2));
+        this.deps.logger.warn(
+          { from: limit, to: this.batchLimit },
+          "batch could not be committed, reading fewer events next time",
+        );
+      }
+      throw err;
+    }
+    this.batchLimit = Math.min(BATCH_LIMIT, limit * 2);
 
     await this.warnBusyWallets(relevant.map((p) => p.to));
     this.heartbeat = Date.now();
-    return fetched >= BATCH_LIMIT ? 0 : POLL_INTERVAL_MS;
+    return fetched >= limit ? 0 : POLL_INTERVAL_MS;
   }
 
   /** Runs until aborted. Errors never advance the cursor; they back off 1 s, 2 s, 4 s ... 30 s. */

@@ -54,6 +54,8 @@ export interface AuthServiceOptions {
   /** Told when sessions stop being valid, so anything tied to them (live streams) can end too. */
   onSessionEnded?: (sessionId: string) => void;
   onSessionsEnded?: (developerId: string, exceptSessionId?: string) => void;
+  /** Told when a real account's password was entered wrongly, so it can be put on record. */
+  onLoginFailed?: (developerId: string, meta: SessionMeta) => void;
 }
 
 export function createAuthService(
@@ -146,6 +148,7 @@ export function createAuthService(
       if (!developer || !ok) {
         if (failures.size > 10_000) failures.clear();
         failures.set(input.email, failed + 1);
+        if (developer) options.onLoginFailed?.(developer.id, meta);
         // Same error for a wrong email and a wrong password.
         throw new AppError("UNAUTHENTICATED", "Invalid email or password");
       }

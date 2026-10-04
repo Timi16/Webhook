@@ -20,7 +20,12 @@ import {
 import { requestId } from "./middleware/requestId.js";
 import { requireOrigin } from "./middleware/requireOrigin.js";
 import { createAccountsRouter } from "./modules/accounts/routes.js";
-import { createAuditRouter, createAuditWriter } from "./modules/audit/routes.js";
+import {
+  createAuditRouter,
+  createAuditWriter,
+  createFailedLoginRecorder,
+} from "./modules/audit/routes.js";
+import { normalizeIp } from "./lib/ip.js";
 import { createApiKeysRepo } from "./modules/apiKeys/repo.js";
 import { createApiKeysRouter } from "./modules/apiKeys/routes.js";
 import { createApiKeysService } from "./modules/apiKeys/service.js";
@@ -123,6 +128,7 @@ export function buildApp(deps: AppDeps): Express {
   });
 
   const mailer = deps.mailer ?? createMailer(env, logger);
+  const recordFailedLogin = createFailedLoginRecorder(prisma, logger);
   const horizon = deps.horizon ?? createHorizonClient(env.HORIZON_URL);
   const urlPolicy = deps.urlPolicy ?? {
     allowInsecure: env.ALLOW_INSECURE_WEBHOOK_TARGETS === "true",
@@ -139,6 +145,7 @@ export function buildApp(deps: AppDeps): Express {
         ...(deps.loginDelayMs !== undefined ? { loginDelayMs: deps.loginDelayMs } : {}),
         onSessionEnded: (sessionId) => hub.closeSession(sessionId),
         onSessionsEnded: (developerId, except) => hub.closeDeveloper(developerId, except),
+        onLoginFailed: (developerId, meta) => recordFailedLogin(developerId, normalizeIp(meta.ip)),
       }),
       env,
       { authLimit: limiters.auth, requireOrigin: originGuard },

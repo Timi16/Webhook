@@ -783,6 +783,10 @@ Decisions made while building, where the spec was silent or needed a correction.
   – API keys: a key that is already rolled or revoked cannot be rolled, and rolling checks the active-key limit.
   – Email change: the token also covers the password hash, so changing or resetting the password cancels a pending change; the current address is told when a change is requested. POST /auth/forgot does not wait for the mailer. Password resets are in the audit log (account.password_reset).
   – Status: delivery health ignores deliveries waiting behind their own endpoint's in-flight sends, so one tenant's slow endpoint is not reported as an outage.
+• Follow-ups from the audit (5 Oct 2026).
+  – Batch size adapts. The ingestion loop reads up to 200 events, but each time a batch cannot be committed it halves the next read (down to 1, where the transaction is given 120 s), and doubles back after every batch that commits. A wallet with very many watches can therefore slow ingestion but not stall it.
+  – A watch backfill reads recorded payments 500 at a time, keyed on (ledger, event id).
+  – A wrong password for a real account is recorded as account.login_failed with the IP, at most 20 an hour per account. Unknown emails record nothing. Unlike successful logins it is always listed.
 • The 5/min auth rate limit applies to the POST /auth routes that take credentials, not to GET /auth/me or logout.
 • Session cookies are Secure only when NODE_ENV=production, so the dashboard works over http://localhost in development.
 • The same transaction reaching us from RPC and from the Horizon backfill (different event IDs) is recorded once: the matcher skips a payment whose transaction hash already exists from the other source.
