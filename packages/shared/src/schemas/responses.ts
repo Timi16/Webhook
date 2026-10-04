@@ -292,3 +292,11 @@ export const overviewResponse = z.strictObject({
     )
     .describe("One entry per hour, oldest first; the last one is the current hour"),
 });
+
+export const accountResponse = z.strictObject({
+  address: z.string(),
+  exists: z.boolean().nullable().describe("null when Horizon could not be reached"),
+  assets: z
+    .array(assetResponse)
+    .describe("Assets the account can receive: XLM plus one per trustline"),
+});

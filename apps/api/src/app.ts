@@ -19,6 +19,7 @@ import {
 } from "./middleware/rateLimit.js";
 import { requestId } from "./middleware/requestId.js";
 import { requireOrigin } from "./middleware/requireOrigin.js";
+import { createAccountsRouter } from "./modules/accounts/routes.js";
 import { createApiKeysRepo } from "./modules/apiKeys/repo.js";
 import { createApiKeysRouter } from "./modules/apiKeys/routes.js";
 import { createApiKeysService } from "./modules/apiKeys/service.js";
@@ -155,6 +156,7 @@ export function buildApp(deps: AppDeps): Express {
     ),
   );
   app.use(createOverviewRouter(api, createOverviewService(createOverviewRepo(prisma))));
+  app.use(createAccountsRouter(api, horizon));
   app.use(createPaymentsRouter(api, createPaymentsService(createPaymentsRepo(prisma))));
   app.use(createEventsRouter(api, createEventsService(createEventsRepo(prisma))));
   app.use(createStreamRouter(api, hub));

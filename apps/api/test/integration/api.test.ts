@@ -978,6 +978,8 @@ describe("tenant isolation", () => {
           `${method} ${path().replace(ids.endpoint!, "{id}").replace(ids.watch!, "{id}").replace(ids.event!, "{id}").replace(ids.payment!, "{eventId}")}`,
       ),
       "delete /v1/api-keys/{id}",
+      // A wallet on the public ledger is not tenant data: any developer may look any address up.
+      "get /v1/accounts/{address}",
     ]);
     expect(withIds.filter((route) => !covered.has(route))).toEqual([]);
   });
@@ -1088,6 +1090,18 @@ describe("documented responses", () => {
       matches(R.watchWithWarningsResponse, res, 201);
       watchId = res.body.watch.id as string;
     }
+    const funded = randomAddress();
+    t.horizon.accounts.set(funded, { exists: true, assets: [XLM, USDC] });
+    const account = await api("get", `/v1/accounts/${funded}`);
+    matches(R.accountResponse, account);
+    expect(account.body).toEqual({ address: funded, exists: true, assets: [XLM, USDC] });
+    expect((await api("get", `/v1/accounts/${randomAddress()}`)).body).toMatchObject({
+      exists: false,
+      assets: [],
+    });
+    expect((await api("get", `/v1/accounts/${Keypair.random().secret()}`)).body.error.code).toBe(
+      "SECRET_KEY_REJECTED",
+    );
     matches(R.watchListResponse, await api("get", "/v1/watches"));
     matches(
       R.watchWithWarningsResponse,
