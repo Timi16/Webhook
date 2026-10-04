@@ -221,8 +221,26 @@ const eventFields = {
   watchId: z.string().nullable(),
   paymentId: z.string().nullable(),
 };
+const eventSummary = z
+  .strictObject({
+    amount,
+    assetCode: z.string(),
+    from: z.string(),
+    watchLabel: z.string().nullable(),
+    reasons: z.array(z.string()),
+  })
+  .nullable()
+  .describe(
+    "The payment an event is about, for showing a list without loading each payload. null for other event types.",
+  );
 export const eventListResponse = z.strictObject({
-  data: z.array(z.strictObject({ ...eventFields, deliveries: z.array(deliveryResponse) })),
+  data: z.array(
+    z.strictObject({
+      ...eventFields,
+      summary: eventSummary,
+      deliveries: z.array(deliveryResponse),
+    }),
+  ),
   nextCursor,
 });
 export const eventDetailResponse = z.strictObject({

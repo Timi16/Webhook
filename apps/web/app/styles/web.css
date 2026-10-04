@@ -1,0 +1,18 @@
+/* Additions for the running app. The design's own rules live in app.css and lagos.css, untouched. */
+body {
+  margin: 0;
+}
+.panel-empty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.nav-foot .who {
+  min-width: 0;
+}
+.nav-foot .who span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,4 +1,5 @@
 import type { Delivery, DeliveryAttempt, DeliveryStatus } from "@prisma/client";
+import { z } from "zod";
 import { AppError } from "../../lib/errors.js";
 import { decodeCursor, toPage } from "../../lib/pagination.js";
 import type { EventsRepo } from "./repo.js";
@@ -31,6 +32,32 @@ function serializeAttempt(a: DeliveryAttempt) {
   };
 }
 
+const paymentPayload = z.object({
+  data: z.object({
+    payment: z.object({
+      amount: z.string(),
+      asset: z.object({ code: z.string() }),
+      from: z.string(),
+    }),
+    watch: z.object({ label: z.string().nullable() }),
+    verification: z.object({ reasons: z.array(z.string()) }),
+  }),
+});
+
+/** The few payment fields a list needs, read from the frozen payload. */
+function summarize(payload: unknown) {
+  const parsed = paymentPayload.safeParse(payload);
+  if (!parsed.success) return null;
+  const { payment, watch, verification } = parsed.data.data;
+  return {
+    amount: payment.amount,
+    assetCode: payment.asset.code,
+    from: payment.from,
+    watchLabel: watch.label,
+    reasons: verification.reasons,
+  };
+}
+
 function notFound(): AppError {
   return new AppError("NOT_FOUND", "Resource not found");
 }
@@ -56,6 +83,7 @@ export function createEventsService(repo: EventsRepo) {
           createdAt: e.createdAt.toISOString(),
           watchId: e.match?.watchId ?? null,
           paymentId: e.match?.paymentEventId ?? null,
+          summary: summarize(e.payload),
           deliveries: e.deliveries.map(serializeDelivery),
         })),
         nextCursor: page.nextCursor,

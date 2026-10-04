@@ -2,6 +2,8 @@ node_modules
 dist
 pnpm-lock.yaml
 docs
+apps/web/app/styles/app.css
+apps/web/app/styles/lagos.css
 .next
 out
 .source
