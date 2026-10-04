@@ -120,9 +120,7 @@ const statusService = createStatusService(createStatusRepo(prisma), {
   },
 });
 const sampleStatus = () =>
-  statusService
-    .sample()
-    .catch((err: unknown) => logger.error({ err }, "status sample failed"));
+  statusService.sample().catch((err: unknown) => logger.error({ err }, "status sample failed"));
 const statusTimer = setInterval(() => void sampleStatus(), STATUS_SAMPLE_INTERVAL_MS);
 void sampleStatus();
 

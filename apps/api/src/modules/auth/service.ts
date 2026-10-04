@@ -231,7 +231,10 @@ export function createAuthService(
       if (e < Date.now()) throw invalid;
       const developer = await repo.findDeveloper(d);
       if (!developer) throw invalid;
-      const expected = Buffer.from(emailChangeSignature(developer.id, e, n, developer.email), "hex");
+      const expected = Buffer.from(
+        emailChangeSignature(developer.id, e, n, developer.email),
+        "hex",
+      );
       const given = Buffer.from(signature, "hex");
       if (given.length !== expected.length || !timingSafeEqual(given, expected)) throw invalid;
 

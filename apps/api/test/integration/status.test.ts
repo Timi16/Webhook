@@ -128,8 +128,14 @@ describe("status page", () => {
   it("drops history older than it shows", async () => {
     const repo = createStatusRepo(prisma);
     const now = new Date("2026-10-04T00:00:30Z");
-    await repo.record({ api: "ok", detection: "ok", delivery: "ok" }, new Date(now.getTime() - 130 * DAY_MS));
-    await repo.record({ api: "ok", detection: "ok", delivery: "ok" }, new Date(now.getTime() - 10 * DAY_MS));
+    await repo.record(
+      { api: "ok", detection: "ok", delivery: "ok" },
+      new Date(now.getTime() - 130 * DAY_MS),
+    );
+    await repo.record(
+      { api: "ok", detection: "ok", delivery: "ok" },
+      new Date(now.getTime() - 10 * DAY_MS),
+    );
     await createStatusService(repo, { now: () => now }).sample(); // the midnight pass prunes
     expect(await prisma.statusDay.count()).toBe(6);
   });

@@ -10,8 +10,7 @@ export function createAuthRepo(prisma: PrismaClient) {
       passwordHash: string;
       name?: string;
       workspace?: string;
-    }) =>
-      prisma.developer.create({ data }),
+    }) => prisma.developer.create({ data }),
     updateProfile: (developerId: string, data: { name?: string; workspace?: string | null }) =>
       prisma.developer.update({ where: { id: developerId }, data }),
     setEmail: (developerId: string, email: string) =>

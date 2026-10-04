@@ -230,9 +230,9 @@ describe("auth", () => {
     expect(t.mails).toHaveLength(before + 1);
     expect(t.mails.at(-1)!.to).toBe(newEmail);
     // Nothing changes until the link is opened.
-    expect((await request(t.app).get("/auth/me").set("Cookie", dev.cookie)).body.developer.email).toBe(
-      dev.email,
-    );
+    expect(
+      (await request(t.app).get("/auth/me").set("Cookie", dev.cookie)).body.developer.email,
+    ).toBe(dev.email);
 
     const token = /token=([\w.-]+)/.exec(t.mails.at(-1)!.text)![1]!;
     const confirm = (value: string) =>
@@ -462,7 +462,9 @@ describe("API keys", () => {
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
     });
     expect(past.status).toBe(400);
-    expect(past.body.error.details).toEqual([{ path: "expiresAt", issue: "must_be_in_the_future" }]);
+    expect(past.body.error.details).toEqual([
+      { path: "expiresAt", issue: "must_be_in_the_future" },
+    ]);
 
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
     const created = await session("post", "/v1/api-keys").send({ name: "temporary", expiresAt });
@@ -496,7 +498,9 @@ describe("API keys", () => {
     await request(t.app).get("/v1/payments?limit=5").set(bearer(key));
     await request(t.app).get(`/v1/payments?q=${secret}`).set(bearer(key));
     await request(t.app).post("/v1/watches").set(bearer(key)).send({}); // 403: no watches:write
-    await waitFor(async () => (await prisma.apiKeyRequest.count({ where: { apiKeyId: id } })) === 3);
+    await waitFor(
+      async () => (await prisma.apiKeyRequest.count({ where: { apiKeyId: id } })) === 3,
+    );
 
     const detail = await session("get", `/v1/api-keys/${id}`);
     expect(detail.status).toBe(200);
@@ -523,8 +527,11 @@ describe("API keys", () => {
 
     const other = await t.signup();
     expect(
-      (await request(t.app).get(`/v1/api-keys/${rolled.body.apiKey.id}`).set("Cookie", other.cookie))
-        .status,
+      (
+        await request(t.app)
+          .get(`/v1/api-keys/${rolled.body.apiKey.id}`)
+          .set("Cookie", other.cookie)
+      ).status,
     ).toBe(404);
   });
 
@@ -775,7 +782,10 @@ describe("endpoints", () => {
       eventTypes: ["payment.received", "payment.rejected"],
     });
     const events = () =>
-      prisma.webhookEvent.findMany({ where: { match: { watchId: watch.id } }, select: { type: true } });
+      prisma.webhookEvent.findMany({
+        where: { match: { watchId: watch.id } },
+        select: { type: true },
+      });
 
     await pay(watch.id, { amountStroops: 10_000_000n }); // 1 USDC: rejected
     expect(await prisma.paymentMatch.count({ where: { watchId: watch.id } })).toBe(1);
