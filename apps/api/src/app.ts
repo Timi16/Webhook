@@ -20,6 +20,7 @@ import {
 import { requestId } from "./middleware/requestId.js";
 import { requireOrigin } from "./middleware/requireOrigin.js";
 import { createAccountsRouter } from "./modules/accounts/routes.js";
+import { createAuditRouter, createAuditWriter } from "./modules/audit/routes.js";
 import { createApiKeysRepo } from "./modules/apiKeys/repo.js";
 import { createApiKeysRouter } from "./modules/apiKeys/routes.js";
 import { createApiKeysService } from "./modules/apiKeys/service.js";
@@ -116,6 +117,7 @@ export function buildApp(deps: AppDeps): Express {
     requireOrigin: originGuard,
     apiPreAuthLimit: limiters.apiPreAuth,
     apiLimit: limiters.api,
+    audit: createAuditWriter(prisma, logger),
   });
 
   const mailer = deps.mailer ?? createMailer(env, logger);
@@ -163,6 +165,7 @@ export function buildApp(deps: AppDeps): Express {
   app.use(createAccountsRouter(api, horizon));
   app.use(createPaymentsRouter(api, createPaymentsService(createPaymentsRepo(prisma))));
   app.use(createEventsRouter(api, createEventsService(createEventsRepo(prisma))));
+  app.use(createAuditRouter(api, prisma));
   app.use(createStreamRouter(api, hub));
 
   app.use(notFoundHandler);

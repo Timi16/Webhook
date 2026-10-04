@@ -3,6 +3,7 @@ import { SECRET_KEY_ISSUE, errorResponseSchema, type ApiKeyScope } from "@webhoo
 import type { Request, RequestHandler, Response, Router } from "express";
 import type { z } from "zod";
 import { AppError } from "../lib/errors.js";
+import { normalizeIp } from "../lib/ip.js";
 import type { AuthContext } from "../middleware/auth.js";
 
 export type AuthMode = "none" | "session" | "any";
@@ -31,6 +32,30 @@ export interface RouteSpec<
   response?: z.ZodType;
   /** Extra middleware, run before authentication. */
   before?: RequestHandler[];
+  /** Records the change in the account's audit log once the handler has succeeded. */
+  audit?: {
+    /** A fixed name, or one chosen from the request (revoke versus delete). */
+    action: string | ((req: Request) => string);
+    /** What was changed, read from the handler's result (or the request when it returns nothing). */
+    target?: (result: unknown, params: Record<string, unknown>) => AuditTarget;
+  };
+}
+
+export interface AuditTarget {
+  id?: string | null | undefined;
+  label?: string | null | undefined;
+  /** Whose account, for routes without authentication (signup, login, email confirmation). */
+  developerId?: string | undefined;
+}
+
+export interface AuditEntry {
+  developerId: string;
+  action: string;
+  targetId: string | null;
+  targetLabel: string | null;
+  actor: "session" | "api_key";
+  apiKeyId: string | null;
+  ip: string | null;
 }
 
 type Infer<T> = T extends z.ZodType ? z.infer<T> : undefined;
@@ -52,6 +77,8 @@ export interface ApiDeps {
   requireOrigin: RequestHandler;
   apiPreAuthLimit: RequestHandler;
   apiLimit: RequestHandler;
+  /** Writes one audit entry. Must not throw: a failed log never fails the request. */
+  audit?: (entry: AuditEntry) => Promise<void>;
 }
 
 /** Postgres cannot store NUL in text or JSON columns. */
@@ -193,6 +220,22 @@ export function createApi(deps: ApiDeps) {
         req,
         res,
       });
+      if (spec.audit && deps.audit) {
+        const target = spec.audit.target?.(result, req.params) ?? {};
+        const developerId = req.auth?.developerId ?? target.developerId;
+        if (developerId) {
+          await deps.audit({
+            developerId,
+            action:
+              typeof spec.audit.action === "string" ? spec.audit.action : spec.audit.action(req),
+            targetId: target.id ?? (typeof req.params.id === "string" ? req.params.id : null),
+            targetLabel: target.label?.slice(0, 200) ?? null,
+            actor: req.auth?.via === "apiKey" ? "api_key" : "session",
+            apiKeyId: req.auth?.apiKeyId ?? null,
+            ip: normalizeIp(req.ip),
+          });
+        }
+      }
       if (res.headersSent) return;
       if (status === 204) res.status(204).end();
       else res.status(status).json(result);

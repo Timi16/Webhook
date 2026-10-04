@@ -1578,6 +1578,96 @@ describe("documented responses", () => {
   });
 });
 
+describe("audit log", () => {
+  it("records each account change with who made it, and never a secret", async () => {
+    const dev = await t.signup();
+    const session = (method: "post" | "patch" | "delete" | "get", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const created = await session("post", "/v1/api-keys").send({ name: "audited" });
+    const key = created.body.key as string;
+    const keyId = created.body.apiKey.id as string;
+    const endpoint = await request(t.app)
+      .post("/v1/endpoints")
+      .set(bearer(key))
+      .set("X-Forwarded-For", "203.0.113.9")
+      .send({ url: "https://audit.example.com/hook" });
+    const endpointId = endpoint.body.endpoint.id as string;
+    const watch = await request(t.app)
+      .post("/v1/watches")
+      .set(bearer(key))
+      .send({ walletAddress: randomAddress(), endpointId, assets: [USDC], label: "Till" });
+    await request(t.app).post(`/v1/endpoints/${endpointId}/rotate-secret`).set(bearer(key));
+    await request(t.app).delete(`/v1/watches/${watch.body.watch.id}`).set(bearer(key));
+    await session("patch", `/v1/api-keys/${keyId}`).send({ name: "audited two" });
+    await session("delete", `/v1/api-keys/${keyId}`);
+    await session("delete", `/v1/api-keys/${keyId}?permanent=true`);
+    // A failed request changes nothing and is not recorded.
+    await session("patch", "/v1/api-keys/missing").send({ name: "x" });
+
+    const res = await session("get", "/v1/audit-log");
+    R.auditLogResponse.parse(res.body);
+    const rows = res.body.data as {
+      action: string;
+      targetLabel: string | null;
+      actor: string;
+      apiKeyId: string | null;
+      ip: string | null;
+    }[];
+    expect(rows.map((r) => `${r.action} | ${r.targetLabel} | ${r.actor}`)).toEqual([
+      "api_key.deleted | audited two | session",
+      "api_key.revoked | audited two | session",
+      "api_key.updated | audited two | session",
+      "watch.deleted | Till | api_key",
+      "endpoint.secret_rotated | https://audit.example.com/hook | api_key",
+      "watch.created | Till | api_key",
+      "endpoint.created | https://audit.example.com/hook | api_key",
+      "api_key.created | audited | session",
+      `account.created | ${dev.email} | session`,
+    ]);
+    const byKey = rows.find((r) => r.action === "endpoint.created")!;
+    expect(byKey).toMatchObject({ apiKeyId: keyId, ip: "203.0.113.9" });
+    const text = JSON.stringify(res.body);
+    expect(text).not.toContain(key);
+    expect(text).not.toContain(endpoint.body.secret);
+
+    const page = await session("get", "/v1/audit-log?limit=4");
+    expect(page.body.data).toHaveLength(4);
+    const next = await session("get", `/v1/audit-log?limit=4&cursor=${page.body.nextCursor}`);
+    expect(next.body.data[0].action).toBe("endpoint.secret_rotated");
+
+    // Another developer sees only their own history, and API keys cannot read it at all.
+    const other = await t.signup();
+    const theirs = await request(t.app).get("/v1/audit-log").set("Cookie", other.cookie);
+    expect(theirs.body.data.map((r: { action: string }) => r.action)).toEqual(["account.created"]);
+    expect((await request(t.app).get("/v1/audit-log").set(bearer(aliceKey))).status).toBe(401);
+  });
+
+  it("records logins, and password and email changes", async () => {
+    const dev = await t.signup();
+    const login = await request(t.app)
+      .post("/auth/login")
+      .set("Origin", ORIGIN)
+      .send({ email: dev.email, password: PASSWORD });
+    const cookie = (login.headers["set-cookie"] as unknown as string[])[0]!.split(";")[0]!;
+    await request(t.app)
+      .post("/auth/login")
+      .set("Origin", ORIGIN)
+      .send({ email: dev.email, password: "wrong password" });
+    await request(t.app)
+      .post("/auth/password")
+      .set("Origin", ORIGIN)
+      .set("Cookie", cookie)
+      .send({ currentPassword: PASSWORD, newPassword: "another long passphrase" });
+    const res = await request(t.app).get("/v1/audit-log").set("Cookie", cookie);
+    expect(res.body.data.map((r: { action: string }) => r.action)).toEqual([
+      "account.password_changed",
+      "account.logged_in",
+      "account.created",
+    ]);
+    expect(JSON.stringify(res.body)).not.toContain("another long passphrase");
+  });
+});
+
 describe("OpenAPI", () => {
   it("documents every route the app serves", () => {
     const document = generateOpenApiDocument(t.app.locals.registry as OpenAPIRegistry);

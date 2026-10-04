@@ -368,3 +368,19 @@ export const statusResponse = z.strictObject({
     }),
   ),
 });
+
+export const auditLogResponse = z.strictObject({
+  data: z.array(
+    z.strictObject({
+      id: z.string(),
+      at: timestamp,
+      action: z.string().describe("For example api_key.created or endpoint.secret_rotated"),
+      targetId: z.string().nullable(),
+      targetLabel: z.string().nullable().describe("The name, URL or label of what was changed"),
+      actor: z.enum(["session", "api_key"]).describe("The dashboard, or an API key"),
+      apiKeyId: z.string().nullable(),
+      ip: z.string().nullable(),
+    }),
+  ),
+  nextCursor,
+});

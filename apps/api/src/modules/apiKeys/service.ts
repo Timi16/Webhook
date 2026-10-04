@@ -143,11 +143,14 @@ export function createApiKeysService(repo: ApiKeysRepo, maxApiKeys = 20) {
     },
 
     /** Revokes the key; with `permanent`, removes it and its request log as well. */
-    async remove(developerId: string, id: string, permanent: boolean): Promise<void> {
+    async remove(developerId: string, id: string, permanent: boolean) {
+      const existing = await repo.find(developerId, id);
       const done = permanent
         ? await repo.remove(developerId, id)
         : await repo.revoke(developerId, id);
-      if (!done) throw notFound();
+      if (!existing || !done) throw notFound();
+      // For the audit log: the name is gone once the key is deleted.
+      return { name: existing.name };
     },
   };
 }

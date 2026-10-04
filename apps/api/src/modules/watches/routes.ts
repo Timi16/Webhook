@@ -37,6 +37,14 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       method: "post",
       path: "/v1/watches",
       scope: "watches:write",
+      audit: {
+        action: "watch.created",
+        target: (r) => {
+          const w = (r as { watch: { id: string; label: string | null; walletAddress: string } })
+            .watch;
+          return { id: w.id, label: w.label ?? w.walletAddress };
+        },
+      },
       response: watchWithWarningsResponse,
       summary: "Watch a wallet",
       description:
@@ -69,6 +77,14 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       method: "patch",
       path: "/v1/watches/:id",
       scope: "watches:write",
+      audit: {
+        action: "watch.updated",
+        target: (r) => {
+          const w = (r as { watch: { id: string; label: string | null; walletAddress: string } })
+            .watch;
+          return { id: w.id, label: w.label ?? w.walletAddress };
+        },
+      },
       response: watchWithWarningsResponse,
       summary: "Update a watch (applies from the next ledger)",
       description: "Changes any rule except the wallet address. Applies from the next ledger.",
@@ -85,6 +101,14 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       method: "post",
       path: "/v1/watches/:id/pause",
       scope: "watches:write",
+      audit: {
+        action: "watch.paused",
+        target: (r) => {
+          const w = (r as { watch: { id: string; label: string | null; walletAddress: string } })
+            .watch;
+          return { id: w.id, label: w.label ?? w.walletAddress };
+        },
+      },
       response: watchEnvelope,
       summary: "Pause a watch",
       description: "Stops matching new payments. Deliveries already queued continue.",
@@ -100,6 +124,14 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       method: "post",
       path: "/v1/watches/:id/resume",
       scope: "watches:write",
+      audit: {
+        action: "watch.resumed",
+        target: (r) => {
+          const w = (r as { watch: { id: string; label: string | null; walletAddress: string } })
+            .watch;
+          return { id: w.id, label: w.label ?? w.walletAddress };
+        },
+      },
       response: watchEnvelope,
       summary: "Resume a watch",
       description:
@@ -116,6 +148,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       method: "delete",
       path: "/v1/watches/:id",
       scope: "watches:write",
+      audit: { action: "watch.deleted" },
       summary: "Delete a watch (history kept)",
       description: "Stops the watch for good. Its payments and events remain available.",
       tag,

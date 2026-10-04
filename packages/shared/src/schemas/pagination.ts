@@ -64,3 +64,5 @@ export const idParamSchema = z.strictObject({ id: z.string().min(1).max(64) });
 export const eventIdParamSchema = z.strictObject({ eventId: z.string().min(1).max(128) });
 
 export const addressParamSchema = z.strictObject({ address: walletAddressSchema });
+
+export const auditLogQuerySchema = z.strictObject({ ...paginationQuery });

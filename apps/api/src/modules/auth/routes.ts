@@ -51,6 +51,13 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/signup",
+      audit: {
+        action: "account.created",
+        target: (r) => {
+          const d = (r as { developer: { id: string; email: string } }).developer;
+          return { id: d.id, label: d.email, developerId: d.id };
+        },
+      },
       response: developerEnvelope,
       summary: "Create an account",
       description:
@@ -73,6 +80,13 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/login",
+      audit: {
+        action: "account.logged_in",
+        target: (r) => {
+          const d = (r as { developer: { id: string; email: string } }).developer;
+          return { id: d.id, label: d.email, developerId: d.id };
+        },
+      },
       response: developerEnvelope,
       summary: "Log in",
       description:
@@ -131,6 +145,13 @@ export function createAuthRouter(
     {
       method: "patch",
       path: "/auth/me",
+      audit: {
+        action: "account.profile_updated",
+        target: (r) => {
+          const d = (r as { developer: { id: string; email: string } }).developer;
+          return { id: d.id, label: d.email, developerId: d.id };
+        },
+      },
       response: developerEnvelope,
       summary: "Update your profile",
       description: "Changes your name or the workspace name shown in the dashboard.",
@@ -166,6 +187,7 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/password",
+      audit: { action: "account.password_changed" },
       summary: "Change password",
       description: "Changes the password and signs out every other session.",
       tag: "Auth",
@@ -182,6 +204,7 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/email",
+      audit: { action: "account.email_change_requested" },
       summary: "Request an email change",
       description:
         "Emails a confirmation link, valid for one hour, to the new address. The login email changes only when that link is opened. Needs the current password.",
@@ -199,6 +222,13 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/email/confirm",
+      audit: {
+        action: "account.email_changed",
+        target: (r) => {
+          const d = (r as { developer: { id: string; email: string } }).developer;
+          return { id: d.id, label: d.email, developerId: d.id };
+        },
+      },
       response: developerEnvelope,
       summary: "Confirm an email change",
       description:

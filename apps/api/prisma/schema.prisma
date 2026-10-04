@@ -19,6 +19,7 @@ model Developer {
   endpoints    Endpoint[]
   watches      Watch[]
   events       WebhookEvent[]
+  auditLogs    AuditLog[]
 }
 
 model Session {
@@ -245,4 +246,21 @@ model StatusDay {
   down      Int      @default(0)
 
   @@id([day, component])
+}
+
+/// Who changed what in an account: one row per successful change made through the API or the
+/// dashboard. Never holds secrets, only the action, the thing it touched and where it came from.
+model AuditLog {
+  id          String    @id @default(cuid())
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  action      String    // e.g. "api_key.created", "endpoint.secret_rotated"
+  targetId    String?
+  targetLabel String?   // a name to show: the key's name, the endpoint's URL, the watch's label
+  actor       String    // "session" | "api_key"
+  apiKeyId    String?   // which key made the change, when actor is "api_key"
+  ip          String?
+  createdAt   DateTime  @default(now())
+
+  @@index([developerId, createdAt])
 }

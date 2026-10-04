@@ -50,6 +50,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
       method: "post",
       path: "/v1/events/:id/resend",
       scope: "endpoints:write",
+      audit: { action: "event.resent" },
       response: deliveryEnvelope,
       summary: "Resend an event (same Webhook-Id)",
       description:

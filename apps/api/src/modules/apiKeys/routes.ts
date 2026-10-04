@@ -35,6 +35,13 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
     {
       method: "post",
       path: "/v1/api-keys",
+      audit: {
+        action: "api_key.created",
+        target: (r) => {
+          const k = (r as { apiKey: { id: string; name: string } }).apiKey;
+          return { id: k.id, label: k.name };
+        },
+      },
       response: apiKeyCreatedResponse,
       summary: "Create an API key (shown once)",
       description:
@@ -66,6 +73,13 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
     {
       method: "patch",
       path: "/v1/api-keys/:id",
+      audit: {
+        action: "api_key.updated",
+        target: (r) => {
+          const k = (r as { apiKey: { id: string; name: string } }).apiKey;
+          return { id: k.id, label: k.name };
+        },
+      },
       response: apiKeyEnvelope,
       summary: "Update an API key",
       description:
@@ -82,6 +96,13 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
     {
       method: "post",
       path: "/v1/api-keys/:id/roll",
+      audit: {
+        action: "api_key.rolled",
+        target: (r) => {
+          const k = (r as { apiKey: { id: string; name: string } }).apiKey;
+          return { id: k.id, label: k.name };
+        },
+      },
       response: apiKeyCreatedResponse,
       summary: "Roll an API key",
       description:
@@ -98,6 +119,10 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
     {
       method: "delete",
       path: "/v1/api-keys/:id",
+      audit: {
+        action: (req) => (req.query.permanent === "true" ? "api_key.deleted" : "api_key.revoked"),
+        target: (r) => ({ label: (r as { name: string }).name }),
+      },
       summary: "Revoke or delete an API key",
       description:
         "Revokes a key immediately: requests using it get `401`, and it stays in the list for history. With `?permanent=true` the key and its request log are removed from the account as well.",
