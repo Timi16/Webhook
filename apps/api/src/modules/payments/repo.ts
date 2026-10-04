@@ -5,6 +5,9 @@ export interface PaymentFilter {
   watchId?: string | undefined;
   wallet?: string | undefined;
   outcome?: MatchOutcome | undefined;
+  asset?: string | undefined;
+  /** Free text: start of a transaction hash or address, or part of a memo. */
+  q?: string | undefined;
   from?: Date | undefined;
   to?: Date | undefined;
 }
@@ -31,6 +34,21 @@ export function createPaymentsRepo(prisma: PrismaClient) {
             },
           },
           ...(filter.wallet ? { toAddress: filter.wallet } : {}),
+          ...(filter.asset ? { assetCode: filter.asset } : {}),
+          ...(filter.q
+            ? {
+                AND: [
+                  {
+                    OR: [
+                      { txHash: { startsWith: filter.q.toLowerCase() } },
+                      { fromAddress: { startsWith: filter.q.toUpperCase() } },
+                      { toAddress: { startsWith: filter.q.toUpperCase() } },
+                      { memo: { contains: filter.q, mode: "insensitive" as const } },
+                    ],
+                  },
+                ],
+              }
+            : {}),
           ...(filter.from || filter.to
             ? {
                 ledgerClosedAt: {

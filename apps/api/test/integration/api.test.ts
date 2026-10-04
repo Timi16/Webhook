@@ -813,6 +813,17 @@ describe("payments and events", () => {
     const wallet = (await prisma.watch.findUniqueOrThrow({ where: { id: otherWatchId } }))
       .walletAddress;
     expect((await get(`wallet=${wallet}`)).body.data).toHaveLength(1);
+    // Free-text search and the asset filter.
+    expect((await get("q=hello")).body.data).toHaveLength(1);
+    expect((await get("q=HELL")).body.data).toHaveLength(1);
+    expect((await get("q=zzzz-no-such")).body.data).toHaveLength(0);
+    expect((await get("asset=USDC")).body.data).toHaveLength(7);
+    expect((await get("asset=XLM")).body.data).toHaveLength(0);
+    const sample = (await get("limit=1")).body.data[0];
+    expect((await get(`q=${sample.from.slice(0, 12)}`)).body.data.length).toBeGreaterThanOrEqual(1);
+    expect(
+      (await get(`q=${sample.txHash.slice(0, 16)}`)).body.data.map((p: { id: string }) => p.id),
+    ).toContain(sample.id);
     const ranged = await get(
       `watchId=${watchId}&from=2026-10-02T00:00:00Z&to=2026-10-04T00:00:00Z`,
     );

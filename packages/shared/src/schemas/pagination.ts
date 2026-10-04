@@ -12,6 +12,18 @@ export const listPaymentsQuerySchema = z.strictObject({
   watchId: z.string().min(1).max(64).optional(),
   wallet: walletAddressSchema.optional(),
   outcome: z.enum(["VERIFIED", "REJECTED"]).optional(),
+  asset: z
+    .string()
+    .regex(/^[A-Za-z0-9]{1,12}$/)
+    .optional()
+    .describe("Asset code, e.g. USDC or XLM"),
+  q: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Matches the start of a transaction hash or address, or part of a memo"),
   from: isoDate.optional(),
   to: isoDate.optional(),
   ...paginationQuery,

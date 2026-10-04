@@ -111,22 +111,25 @@ export function WatchForm({ watch }: { watch?: Watch }) {
   );
 
   // Wallet address: the same states the design walks through as you type.
-  let addressState: "empty" | "typing" | "ok" | "bad" | "refused" = "empty";
-  let addressProblem = "";
-  if (refused && !addr) addressState = "refused";
-  else if (!addr) addressState = "empty";
-  else if (addr[0] !== "G") {
-    addressState = "bad";
-    addressProblem = `A public key starts with G. This one starts with ${addr[0]}.`;
-  } else if (addr.length < 56) addressState = "typing";
-  else if (addr.length > 56) {
-    addressState = "bad";
-    addressProblem = `A public key is 56 characters. This one is ${addr.length}.`;
-  } else if (!isValidPublicKey(addr)) {
-    addressState = "bad";
-    addressProblem =
-      "The checksum doesn't match, so there's a typo somewhere. Copy the address again from the wallet.";
-  } else addressState = "ok";
+  const [addressState, addressProblem] = ((): [
+    "empty" | "typing" | "ok" | "bad" | "refused",
+    string,
+  ] => {
+    if (refused && !addr) return ["refused", ""];
+    if (!addr) return ["empty", ""];
+    if (addr[0] !== "G")
+      return ["bad", `A public key starts with G. This one starts with ${addr[0]}.`];
+    if (addr.length < 56) return ["typing", ""];
+    if (addr.length > 56)
+      return ["bad", `A public key is 56 characters. This one is ${addr.length}.`];
+    if (!isValidPublicKey(addr)) {
+      return [
+        "bad",
+        "The checksum doesn't match, so there's a typo somewhere. Copy the address again from the wallet.",
+      ];
+    }
+    return ["ok", ""];
+  })();
 
   const onAddress = (raw: string) => {
     const value = raw.replace(/\s+/g, "");

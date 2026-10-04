@@ -44,6 +44,8 @@ export function createPaymentsService(repo: PaymentsRepo) {
         watchId?: string | undefined;
         wallet?: string | undefined;
         outcome?: "VERIFIED" | "REJECTED" | undefined;
+        asset?: string | undefined;
+        q?: string | undefined;
         from?: string | undefined;
         to?: string | undefined;
         cursor?: string | undefined;
@@ -54,6 +56,8 @@ export function createPaymentsService(repo: PaymentsRepo) {
         watchId: query.watchId,
         wallet: query.wallet,
         outcome: query.outcome,
+        asset: query.asset,
+        q: query.q,
         from: query.from ? new Date(query.from) : undefined,
         to: query.to ? new Date(query.to) : undefined,
       };
