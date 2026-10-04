@@ -134,40 +134,73 @@ function Nav() {
   const pathname = usePathname();
   const { developer } = useSession();
   const displayName = developer.name ?? developer.email.split("@")[0] ?? developer.email;
+  // On phones the list sits behind a menu button; picking a page closes it again.
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
-    <nav className="nav" aria-label="Main">
-      <Link className="brand" href="/overview" aria-label="Webhook home">
-        <Logo />
-        <span className="wordmark">webhook</span>
-        <span className="net">testnet</span>
-      </Link>
-      <ul className="nav-list">
-        {NAV.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <li key={item.href}>
-              <Link
-                className={active ? "nav-item is-active" : "nav-item"}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon name={item.icon} size={18} />
-                <span>{item.label}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-      <ul className="nav-list nav-extra">
-        <li>
-          <a className="nav-item" href={DOCS_URL} target="_blank" rel="noopener">
-            <Icon name="book" size={18} />
-            <span>Docs</span>
-            <Icon name="external-link" size={14} className="end" />
-          </a>
-        </li>
-      </ul>
-      <AccountMenu displayName={displayName} />
+    <nav className={open ? "nav app-nav is-open" : "nav app-nav"} aria-label="Main">
+      <div className="nav-bar">
+        <Link className="brand" href="/overview" aria-label="Webhook home">
+          <Logo />
+          <span className="wordmark">webhook</span>
+          <span className="net">testnet</span>
+        </Link>
+        <button
+          type="button"
+          className="nav-toggle"
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          aria-controls="nav-body"
+          onClick={() => setOpen(!open)}
+        >
+          {open ? (
+            <Icon name="x" size={20} />
+          ) : (
+            <svg className="ic" aria-hidden="true" width={20} height={20} viewBox="0 0 24 24">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          )}
+        </button>
+      </div>
+      <div className="nav-body" id="nav-body">
+        <ul className="nav-list">
+          {NAV.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <li key={item.href}>
+                <Link
+                  className={active ? "nav-item is-active" : "nav-item"}
+                  href={item.href}
+                  title={item.label}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <Icon name={item.icon} size={18} />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+        <ul className="nav-list nav-extra">
+          <li>
+            <a className="nav-item" href={DOCS_URL} target="_blank" rel="noopener" title="Docs">
+              <Icon name="book" size={18} />
+              <span>Docs</span>
+              <Icon name="external-link" size={14} className="end" />
+            </a>
+          </li>
+        </ul>
+        <AccountMenu displayName={displayName} />
+      </div>
     </nav>
   );
 }

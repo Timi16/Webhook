@@ -275,7 +275,9 @@ function Payments() {
                       <td className="num">
                         <Amount amount={p.amount} code={p.asset.code} />
                       </td>
-                      <td>{p.memo ?? <span className="muted">—</span>}</td>
+                      <td className="cell-clip" title={p.memo ?? undefined}>
+                        {p.memo ?? <span className="muted">—</span>}
+                      </td>
                       <td style={{ paddingTop: 8, paddingBottom: 8 }}>
                         {match && <StatusBadge status={match.outcome} />}
                         {match && match.reasons.length > 0 && (
@@ -306,7 +308,7 @@ function Payments() {
                       <dt>From</dt>
                       <dd>{shortAddress(p.from)}</dd>
                       <dt>Memo</dt>
-                      <dd>{p.memo ?? "—"}</dd>
+                      <dd style={{ overflowWrap: "anywhere" }}>{p.memo ?? "—"}</dd>
                       {match && match.reasons.length > 0 && (
                         <>
                           <dt>Reason</dt>
