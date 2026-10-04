@@ -15,6 +15,7 @@ export function rawTestEnv(
     SESSION_SECRET: "ab".repeat(32),
     ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
     LOG_LEVEL: "silent",
+    TRUST_PROXY: "1", // tests set X-Forwarded-For to play different clients
     ...overrides,
   };
 }

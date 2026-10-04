@@ -100,7 +100,7 @@ routes (HTTP only: validate, call service, shape response) → service (business
 Express app
 buildApp() wires middleware in a fixed order; tests import the same function, so what's tested is exactly what runs.
 Middleware order
-1. app.set("trust proxy", 1), app.disable("x-powered-by")
+1. app.set("trust proxy", TRUST_PROXY: 1 in production, 0 otherwise), app.disable("x-powered-by")
 2. requestId: reads X-Request-Id or generates one; echoes it on the response
 3. pino-http with redaction
 4. helmet
@@ -773,6 +773,16 @@ Decisions made while building, where the spec was silent or needed a correction.
 • Status page (added 4 Oct 2026). GET /status is public and returns three components (API, payment detection, webhook delivery) with their state now and their uptime per UTC day for the last 90 days. The worker checks each component once a minute and adds the result to StatusDay (ok / degraded / down counts per day and component): the API by calling its /health over HTTP, detection by the age of the ingestion cursor, delivery by how long the oldest due delivery has waited (up to 60 s is ok, up to 5 min degraded, beyond that down). A day's uptime is (ok + degraded) / checks; a day with no row is shown as "no data", never as up. Rows older than 120 days are pruned.
 • Audit log (added 4 Oct 2026). Every successful change to an account is written to AuditLog by the route helper (a route declares `audit: { action }`): account created, logged in, profile, password and email changes, and each API key, endpoint and watch created, changed or deleted, plus event resends and replays. A row holds the action, the target's id and a display label (key name, endpoint URL, watch label), whether a session or an API key did it, the key's id and the IP. It never holds secrets, request bodies or query strings. A row also carries a short `detail` of what the change did ("events: payment.received", "renamed to …"), built from the validated request body of routes that take no secrets. GET /v1/audit-log (session only) lists it newest first with the usual cursor, filtered by `kind` (account, api_key, endpoint, watch, event) and `actor` (session, api_key); logins are left out unless `logins=true`. Failed requests are not recorded; a failed log write is logged and never fails the request. Rows are deleted with the account and are not otherwise pruned.
 • Endpoint events in the dashboard. Both payment.received and payment.rejected can be switched off on an endpoint, as long as one stays on (the API has always allowed this; the dashboard used to force payment.received).
+• Audit fixes (5 Oct 2026).
+  – Matching: a payment whose row already exists is still judged by any eligible watch that has no match for it yet (a watch created just before the payment, which the worker's in-memory list had not loaded). Re-processing stays a no-op because only watches without a match are evaluated.
+  – Network reset: a ledger tip more than 100 ledgers behind the cursor must persist for 60 s before it is treated as a reset. A single stale reading from a lagging RPC node no longer rewinds the cursor or notifies endpoints.
+  – A watch whose endpoint is deleted records the match but creates no event; resend refuses deliveries to a deleted endpoint with 409. Endpoint event types are looked up once per batch.
+  – Fee-bump transactions are locked on both hashes, so RPC (outer hash only) and Horizon always share a lock. Only the retention-gap backfill refreshes the ingestion heartbeat.
+  – trust proxy is TRUST_PROXY (1 in production, 0 otherwise) and the API listens on HOST (127.0.0.1 in production): X-Forwarded-For is believed only when a proxy is really in front.
+  – Rate limits: refused /v1 requests (401 and 403) count per IP before authentication; sessions and API keys have separate 300/min budgets per developer.
+  – API keys: a key that is already rolled or revoked cannot be rolled, and rolling checks the active-key limit.
+  – Email change: the token also covers the password hash, so changing or resetting the password cancels a pending change; the current address is told when a change is requested. POST /auth/forgot does not wait for the mailer. Password resets are in the audit log (account.password_reset).
+  – Status: delivery health ignores deliveries waiting behind their own endpoint's in-flight sends, so one tenant's slow endpoint is not reported as an outage.
 • The 5/min auth rate limit applies to the POST /auth routes that take credentials, not to GET /auth/me or logout.
 • Session cookies are Secure only when NODE_ENV=production, so the dashboard works over http://localhost in development.
 • The same transaction reaching us from RPC and from the Horizon backfill (different event IDs) is recorded once: the matcher skips a payment whose transaction hash already exists from the other source.

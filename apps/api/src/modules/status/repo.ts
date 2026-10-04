@@ -23,20 +23,24 @@ export function createStatusRepo(prisma: PrismaClient) {
           where: { name: RPC_CURSOR_NAME },
           select: { updatedAt: true },
         }),
-        prisma.delivery.findFirst({
-          where: {
-            status: { in: ["PENDING", "RETRYING"] },
-            nextAttemptAt: { lte: now },
-            // Deliveries parked behind a DISABLED endpoint are never claimed, so they are not late.
-            endpoint: { status: { not: "DISABLED" } },
-          },
-          orderBy: { nextAttemptAt: "asc" },
-          select: { nextAttemptAt: true },
-        }),
+        // The oldest delivery that is due and that nothing of its owner's is holding up. One
+        // waiting behind a disabled endpoint, or behind an endpoint that is busy answering other
+        // deliveries, is that endpoint's backlog, not the service being late.
+        prisma.$queryRaw<{ nextAttemptAt: Date | null }[]>`
+          SELECT min(d."nextAttemptAt") AS "nextAttemptAt"
+          FROM "Delivery" d JOIN "Endpoint" e ON e.id = d."endpointId"
+          WHERE d.status IN ('PENDING', 'RETRYING') AND d."nextAttemptAt" <= ${now}
+            AND e.status <> 'DISABLED'
+            AND NOT EXISTS (
+              SELECT 1 FROM "Delivery" s
+              WHERE s."endpointId" = d."endpointId" AND s.status = 'SENDING'
+            )`,
       ]);
       return {
         cursorAgeMs: cursor ? now.getTime() - cursor.updatedAt.getTime() : null,
-        oldestDueMs: oldestDue ? now.getTime() - oldestDue.nextAttemptAt.getTime() : null,
+        oldestDueMs: oldestDue[0]?.nextAttemptAt
+          ? now.getTime() - oldestDue[0].nextAttemptAt.getTime()
+          : null,
       };
     },
 

@@ -7,7 +7,7 @@ import type { NormalizedPayment } from "./types.js";
 import type { ParsedWatch } from "./watch.js";
 
 export interface MatchResult {
-  /** False when the payment had already been processed (primary-key hit or same tx from the other source). */
+  /** False when the payment row already existed (primary-key hit or same tx from the other source). */
   inserted: boolean;
   matches: number;
   events: number;
@@ -24,6 +24,30 @@ export async function lockTransaction(tx: Prisma.TransactionClient, txHash: stri
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${txHash}))::text`;
 }
 
+/** Which payment events each endpoint accepts, looked up once per batch instead of per match. */
+export type EndpointEvents = Map<string, string[]>;
+
+async function endpointAccepts(
+  tx: Prisma.TransactionClient,
+  endpointId: string,
+  type: string,
+  cache: EndpointEvents,
+): Promise<boolean> {
+  let accepted = cache.get(endpointId);
+  if (accepted === undefined) {
+    // A watch whose endpoint row is missing is broken data: that throws, so the batch rolls
+    // back instead of dropping the event. A deleted endpoint accepts nothing: a delivery to it
+    // would never be claimed.
+    const endpoint = await tx.endpoint.findUniqueOrThrow({
+      where: { id: endpointId },
+      select: { eventTypes: true, deletedAt: true },
+    });
+    accepted = endpoint.deletedAt ? [] : endpoint.eventTypes;
+    cache.set(endpointId, accepted);
+  }
+  return accepted.includes(type);
+}
+
 /**
  * Evaluates one watch against a recorded payment and writes the PaymentMatch, plus the
  * WebhookEvent and its first Delivery when the watch asked for that outcome. Returns whether
@@ -34,6 +58,7 @@ export async function createMatch(
   p: NormalizedPayment,
   watch: ParsedWatch,
   now: Date,
+  endpoints: EndpointEvents = new Map(),
 ): Promise<boolean> {
   const result = evaluateWatch(p, watch);
   const match = await tx.paymentMatch.create({
@@ -46,15 +71,10 @@ export async function createMatch(
   });
 
   const type = result.outcome === "VERIFIED" ? "payment.received" : "payment.rejected";
-  // Both the watch and its endpoint must want this kind of event. A watch whose endpoint is
-  // missing is broken data: that throws, so the batch rolls back instead of dropping the event.
-  const endpoint = watch.eventTypes.includes(type)
-    ? await tx.endpoint.findUniqueOrThrow({
-        where: { id: watch.endpointId },
-        select: { eventTypes: true },
-      })
-    : null;
-  const emits = endpoint?.eventTypes.includes(type) ?? false;
+  // Both the watch and its endpoint must want this kind of event.
+  const emits =
+    watch.eventTypes.includes(type) &&
+    (await endpointAccepts(tx, watch.endpointId, type, endpoints));
   if (emits) {
     const eventId = newEventId();
     await tx.webhookEvent.create({
@@ -89,8 +109,12 @@ export async function processPayment(
   p: NormalizedPayment,
   watches: ParsedWatch[],
   now: Date = new Date(),
+  endpoints: EndpointEvents = new Map(),
 ): Promise<MatchResult> {
-  await lockTransaction(tx, p.innerTxHash ?? p.txHash);
+  // RPC only knows a fee-bump's outer hash and Horizon knows both, so every hash is locked (in
+  // a fixed order): two sources handling the same transaction always share at least one lock.
+  for (const hash of [p.txHash, ...(p.innerTxHash ? [p.innerTxHash] : [])].sort())
+    await lockTransaction(tx, hash);
   const hashes = p.innerTxHash ? [p.txHash, p.innerTxHash] : [p.txHash];
   const fromOtherSource = await tx.chainPayment.findFirst({
     where: {
@@ -131,13 +155,26 @@ export async function processPayment(
     ],
     skipDuplicates: true, // ON CONFLICT (eventId) DO NOTHING
   });
-  if (count === 0) return SKIPPED;
+  // The payment may already be recorded (seen before, or by reconciliation) while a watch that
+  // should judge it has no match yet: one created just before the payment landed, which the
+  // in-memory watch list had not picked up when it was first processed. Only the watches
+  // without a match are evaluated, so re-processing stays a no-op.
+  let pending = eligible;
+  if (count === 0) {
+    const matched = await tx.paymentMatch.findMany({
+      where: { paymentEventId: p.eventId, watchId: { in: eligible.map((w) => w.id) } },
+      select: { watchId: true },
+    });
+    const done = new Set(matched.map((m) => m.watchId));
+    pending = eligible.filter((w) => !done.has(w.id));
+    if (pending.length === 0) return SKIPPED;
+  }
 
   let events = 0;
-  for (const watch of eligible) {
-    if (await createMatch(tx, p, watch, now)) events += 1;
+  for (const watch of pending) {
+    if (await createMatch(tx, p, watch, now, endpoints)) events += 1;
   }
   if (events > 0) await notify(tx, CHANNELS.deliveries);
 
-  return { inserted: true, matches: eligible.length, events };
+  return { inserted: count > 0, matches: pending.length, events };
 }

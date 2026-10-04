@@ -48,6 +48,7 @@ beforeEach(async () => {
     logger,
     onNetworkReset: (tip) =>
       handleNetworkReset({ prisma, networkPassphrase: env.NETWORK_PASSPHRASE, alert, logger }, tip),
+    resetConfirmMs: 0, // act on the first reading; the confirmation window has its own test
   });
   await saveCursor(prisma, { ledger: 900 }, env.NETWORK_PASSPHRASE);
 });
@@ -347,6 +348,81 @@ describe("ingestion and matching", () => {
       await listener.stop();
     }
   }, 60_000);
+
+  it("W15: one reading far behind is not a reset; it must hold before anything is rewound", async () => {
+    const onNetworkReset = vi.fn(async (_tip: number) => {});
+    const careful = new Ingestion({
+      prisma,
+      source,
+      backfill: fakeBackfill(),
+      watchedSet,
+      networkPassphrase: env.NETWORK_PASSPHRASE,
+      logger,
+      onNetworkReset,
+      resetConfirmMs: 150,
+    });
+    const tenant = await seedTenant(prisma);
+    await watchedSet.reload();
+
+    // An RPC node that is itself behind answers with an old tip, once.
+    source.tip = 300;
+    await careful.tick();
+    expect(onNetworkReset).not.toHaveBeenCalled();
+    expect(await loadCursor(prisma)).toMatchObject({ ledger: 900 });
+    // The next reading is normal again: the suspicion is dropped and ingestion carries on.
+    source.tip = 1000;
+    source.payments.push(makePayment({ to: tenant.watch.walletAddress, ledger: 950 }));
+    await careful.tick();
+    expect(onNetworkReset).not.toHaveBeenCalled();
+    expect(await prisma.chainPayment.count()).toBe(1);
+
+    // A real reset keeps answering low; once that has held for the window, it is acted on.
+    const cursor = (await loadCursor(prisma))!.ledger;
+    source.tip = cursor - 500;
+    await careful.tick();
+    expect(onNetworkReset).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await careful.tick();
+    expect(onNetworkReset).toHaveBeenCalledWith(cursor - 500);
+  });
+
+  it("W4: a watch added just before a payment still judges it when the worker's watch list was stale", async () => {
+    const tenant = await seedTenant(prisma);
+    await watchedSet.reload();
+    // Created after the list was loaded, so the first pass does not know about it.
+    const late = await seedWatch(prisma, tenant.developer.id, tenant.endpoint.id, {
+      walletAddress: tenant.watch.walletAddress,
+    });
+    const payment = makePayment({ to: tenant.watch.walletAddress, ledger: 950 });
+    source.payments.push(payment);
+    await drain();
+    expect(await prisma.paymentMatch.count({ where: { watchId: late.id } })).toBe(0);
+
+    // Reconciliation re-reads the ledger with a fresh list and fills in the missing judgement.
+    await watchedSet.reload();
+    await reconcile({ prisma, source, watchedSet, logger });
+    expect(await prisma.chainPayment.count()).toBe(1);
+    expect(await prisma.paymentMatch.count({ where: { watchId: late.id } })).toBe(1);
+    expect(await prisma.webhookEvent.count()).toBe(2);
+    // And doing it again changes nothing.
+    await reconcile({ prisma, source, watchedSet, logger });
+    expect(await prisma.paymentMatch.count()).toBe(2);
+    expect(await prisma.webhookEvent.count()).toBe(2);
+  });
+
+  it("W7: a watch whose endpoint was deleted records the payment but queues no webhook", async () => {
+    const tenant = await seedTenant(prisma);
+    await prisma.endpoint.update({
+      where: { id: tenant.endpoint.id },
+      data: { deletedAt: new Date(), status: "DISABLED" },
+    });
+    await watchedSet.reload();
+    source.payments.push(makePayment({ to: tenant.watch.walletAddress, ledger: 950 }));
+    await drain();
+    expect(await prisma.paymentMatch.count()).toBe(1);
+    expect(await prisma.webhookEvent.count()).toBe(0);
+    expect(await prisma.delivery.count()).toBe(0);
+  });
 
   it("W15: a testnet reset moves the cursor, notifies every active endpoint and alerts", async () => {
     const a = await seedTenant(prisma);

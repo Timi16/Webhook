@@ -32,8 +32,12 @@ export interface TestSession {
 let counter = 0;
 
 /** The real app with fast auth, generous rate limits, a fake Horizon and an in-memory mailbox. */
-export function makeTestApp(db: TestDb, overrides: Partial<AppDeps> = {}): TestApp {
-  const env = testEnv();
+export function makeTestApp(
+  db: TestDb,
+  overrides: Partial<AppDeps> = {},
+  envOverrides: Record<string, string | undefined> = {},
+): TestApp {
+  const env = testEnv(envOverrides);
   const mails: Mail[] = [];
   const mailer: Mailer = { send: async (mail) => void mails.push(mail) };
   const chunks: string[] = [];

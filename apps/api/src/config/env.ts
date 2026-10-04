@@ -8,6 +8,16 @@ const optionalString = z.preprocess((v) => (v === "" ? undefined : v), z.string(
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+  // The address to listen on. In production the API sits behind a reverse proxy on the same
+  // machine, so the default there is loopback: nobody can reach it without going through the proxy.
+  HOST: optionalString,
+  // How many reverse proxies sit in front of the API. Their X-Forwarded-For is trusted for the
+  // client IP (rate limits, API key IP rules, logs). 0 = nobody is trusted: use the socket address.
+  // Default: 1 in production, 0 otherwise. Set it to 0 if the API is exposed directly.
+  TRUST_PROXY: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().int().min(0).max(5).optional(),
+  ),
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, "must be a postgresql:// URL"),
   STELLAR_RPC_URL: z.url(),
   HORIZON_URL: z.url(),

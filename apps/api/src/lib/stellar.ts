@@ -35,6 +35,8 @@ export function assetContractId(asset: Asset, networkPassphrase: string): string
     const stellarAsset =
       asset.issuer === null ? StellarAsset.native() : new StellarAsset(asset.code, asset.issuer);
     id = stellarAsset.contractId(networkPassphrase);
+    // Anyone can emit events naming made-up assets, so the cache is bounded.
+    if (contractIdCache.size >= 5_000) contractIdCache.clear();
     contractIdCache.set(cacheKey, id);
   }
   return id;

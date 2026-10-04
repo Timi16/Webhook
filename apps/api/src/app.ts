@@ -74,7 +74,9 @@ export function buildApp(deps: AppDeps): Express {
   const { env, logger, prisma } = deps;
   const app = express();
 
-  app.set("trust proxy", 1);
+  // Only believe X-Forwarded-For when a proxy is really in front; otherwise anyone could choose
+  // their own IP and walk past rate limits and API key IP rules.
+  app.set("trust proxy", env.TRUST_PROXY ?? (env.NODE_ENV === "production" ? 1 : 0));
   app.disable("x-powered-by");
 
   app.use(requestId);

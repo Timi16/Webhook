@@ -227,14 +227,15 @@ describe("auth", () => {
 
     const before = t.mails.length;
     expect((await ask(newEmail.toUpperCase())).status).toBe(204);
-    expect(t.mails).toHaveLength(before + 1);
-    expect(t.mails.at(-1)!.to).toBe(newEmail);
+    // The link goes to the new address; the current one is told a change was requested.
+    expect(t.mails.slice(before).map((m) => m.to)).toEqual([newEmail, dev.email]);
+    expect(t.mails.at(-1)!.text).not.toContain("token=");
     // Nothing changes until the link is opened.
     expect(
       (await request(t.app).get("/auth/me").set("Cookie", dev.cookie)).body.developer.email,
     ).toBe(dev.email);
 
-    const token = /token=([\w.-]+)/.exec(t.mails.at(-1)!.text)![1]!;
+    const token = /token=([\w.-]+)/.exec(t.mails.at(-2)!.text)![1]!;
     const confirm = (value: string) =>
       request(t.app).post("/auth/email/confirm").set("Origin", ORIGIN).send({ token: value });
     expect((await confirm(`${token}00`)).status).toBe(400);
@@ -249,6 +250,45 @@ describe("auth", () => {
       request(t.app).post("/auth/login").set("Origin", ORIGIN).send({ email, password: PASSWORD });
     expect((await login(newEmail)).status).toBe(200);
     expect((await login(dev.email)).status).toBe(401);
+  });
+
+  it("changing the password cancels an email change that was waiting to be confirmed", async () => {
+    const dev = await t.signup();
+    const stolen = `attacker-${Date.now()}@example.com`;
+    const before = t.mails.length;
+    await request(t.app)
+      .post("/auth/email")
+      .set("Origin", ORIGIN)
+      .set("Cookie", dev.cookie)
+      .send({ email: stolen, password: PASSWORD });
+    const token = /token=([\w.-]+)/.exec(t.mails[before]!.text)![1]!;
+    // The owner notices the warning email and changes the password.
+    await request(t.app)
+      .post("/auth/password")
+      .set("Origin", ORIGIN)
+      .set("Cookie", dev.cookie)
+      .send({ currentPassword: PASSWORD, newPassword: "a brand new passphrase" });
+    const confirm = await request(t.app)
+      .post("/auth/email/confirm")
+      .set("Origin", ORIGIN)
+      .send({ token });
+    expect(confirm.status).toBe(400);
+    expect(
+      (await prisma.developer.findUniqueOrThrow({ where: { id: dev.developerId } })).email,
+    ).toBe(dev.email);
+  });
+
+  it("a password reset is in the audit log", async () => {
+    const dev = await t.signup();
+    const before = t.mails.length;
+    await request(t.app).post("/auth/forgot").set("Origin", ORIGIN).send({ email: dev.email });
+    const token = /token=([\w.-]+)/.exec(t.mails[before]!.text)![1]!;
+    await request(t.app)
+      .post("/auth/reset")
+      .set("Origin", ORIGIN)
+      .send({ token, newPassword: "reset to this passphrase" });
+    const rows = await prisma.auditLog.findMany({ where: { developerId: dev.developerId } });
+    expect(rows.map((r) => r.action)).toContain("account.password_reset");
   });
 
   it("forgot always returns 204; the emailed token resets the password once", async () => {
@@ -533,6 +573,82 @@ describe("API keys", () => {
           .set("Cookie", other.cookie)
       ).status,
     ).toBe(404);
+  });
+
+  it("a rolled key cannot be rolled again, and rolling needs room under the key limit", async () => {
+    const dev = await t.signup();
+    const session = (method: "post", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const created = await session("post", "/v1/api-keys").send({ name: "worker" });
+    const id = created.body.apiKey.id as string;
+    expect((await session("post", `/v1/api-keys/${id}/roll`)).status).toBe(201);
+    const until = (await prisma.apiKey.findUniqueOrThrow({ where: { id } })).revokedAt;
+    // Rolling the old key again would push its end date back, for ever.
+    const again = await session("post", `/v1/api-keys/${id}/roll`);
+    expect(again.status).toBe(409);
+    expect((await prisma.apiKey.findUniqueOrThrow({ where: { id } })).revokedAt).toEqual(until);
+
+    const limited = makeTestApp(db, { quotas: { apiKeys: 1 } });
+    const other = await limited.signup();
+    const only = await other.createApiKey();
+    const full = await request(limited.app)
+      .post(`/v1/api-keys/${only.id}/roll`)
+      .set("Cookie", other.cookie)
+      .set("Origin", ORIGIN);
+    expect(full.status).toBe(409);
+  });
+
+  it("a key refused for its IP is rate limited like a bad key, and ignores X-Forwarded-For without a proxy", async () => {
+    const strict = makeTestApp(db, { rateLimits: { global: 3, auth: 100_000, api: 100_000 } });
+    const dev = await strict.signup();
+    const created = await request(strict.app)
+      .post("/v1/api-keys")
+      .set("Cookie", dev.cookie)
+      .set("Origin", ORIGIN)
+      .send({ name: "office only", allowedIps: ["203.0.113.7"] });
+    const key = created.body.key as string;
+    const blocked = () =>
+      request(strict.app)
+        .get("/v1/watches")
+        .set(bearer(key))
+        .set("X-Forwarded-For", "198.51.100.9");
+    expect((await blocked()).status).toBe(403);
+    expect((await blocked()).status).toBe(403);
+    expect((await blocked()).status).toBe(403);
+    expect((await blocked()).status).toBe(429);
+    // From the allowed address the key is unaffected: refusals are counted per IP.
+    const allowed = await request(strict.app)
+      .get("/v1/watches")
+      .set(bearer(key))
+      .set("X-Forwarded-For", "203.0.113.7");
+    expect(allowed.status).toBe(200);
+
+    // With no proxy in front, the header is the caller's own claim and must not be believed.
+    const direct = makeTestApp(db, {}, { TRUST_PROXY: "0" });
+    const owner = await direct.signup();
+    const made = await request(direct.app)
+      .post("/v1/api-keys")
+      .set("Cookie", owner.cookie)
+      .set("Origin", ORIGIN)
+      .send({ name: "office only", allowedIps: ["203.0.113.7"] });
+    const spoofed = await request(direct.app)
+      .get("/v1/watches")
+      .set(bearer(made.body.key as string))
+      .set("X-Forwarded-For", "203.0.113.7");
+    expect(spoofed.status).toBe(403);
+  });
+
+  it("the dashboard and API keys have separate request budgets", async () => {
+    const tight = makeTestApp(db, { rateLimits: { global: 100_000, auth: 100_000, api: 2 } });
+    const dev = await tight.signup();
+    const key = (await dev.createApiKey()).key; // one dashboard request
+    const viaKey = () => request(tight.app).get("/v1/watches").set(bearer(key));
+    expect((await viaKey()).status).toBe(200);
+    expect((await viaKey()).status).toBe(200);
+    expect((await viaKey()).status).toBe(429);
+    // The integration has used up its budget; the owner can still use the dashboard.
+    const viaSession = await request(tight.app).get("/v1/watches").set("Cookie", dev.cookie);
+    expect(viaSession.status).toBe(200);
   });
 
   it("renames a key, rolls it with a 24 h overlap, and deletes it for good", async () => {

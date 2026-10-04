@@ -83,15 +83,17 @@ export function createAuthService(
       .digest("hex");
   }
 
-  // Stateless like the reset token: it stops working as soon as the account's email changes.
+  // Stateless like the reset token: it stops working as soon as the account's email or password
+  // changes, so resetting the password also cancels a change someone else started.
   function emailChangeSignature(
     developerId: string,
     expiresAt: number,
     newEmail: string,
     currentEmail: string,
+    passwordHash: string,
   ): string {
     return createHmac("sha256", env.SESSION_SECRET)
-      .update(`email.${developerId}.${expiresAt}.${newEmail}.${currentEmail}`)
+      .update(`email.${developerId}.${expiresAt}.${newEmail}.${currentEmail}.${passwordHash}`)
       .digest("hex");
   }
   const emailTaken = () => new AppError("CONFLICT", "An account with this email already exists");
@@ -202,7 +204,13 @@ export function createAuthService(
       }
       if (await repo.findDeveloperByEmail(input.email)) throw emailTaken();
       const expiresAt = Date.now() + EMAIL_CHANGE_TTL_MS;
-      const signature = emailChangeSignature(developer.id, expiresAt, input.email, developer.email);
+      const signature = emailChangeSignature(
+        developer.id,
+        expiresAt,
+        input.email,
+        developer.email,
+        developer.passwordHash,
+      );
       const payload = Buffer.from(
         JSON.stringify({ d: developer.id, e: expiresAt, n: input.email }),
       ).toString("base64url");
@@ -211,6 +219,14 @@ export function createAuthService(
         subject: "Confirm your new Webhook email",
         text: `Use this link within 1 hour to make this your Webhook login email:\n\n${env.DASHBOARD_ORIGIN}/confirm-email?token=${payload}.${signature}\n\nIf you didn't ask for this, ignore this email.`,
       });
+      // The current address hears about it too: if this was not them, they still have the hour.
+      void mailer
+        .send({
+          to: developer.email,
+          subject: "A change of your Webhook email was requested",
+          text: `Someone logged in to your account asked to change its email to ${input.email}. Nothing changes unless the link sent to that address is opened within 1 hour.\n\nIf this was not you, change your password now: that cancels the request.`,
+        })
+        .catch(() => {});
     },
 
     async confirmEmailChange(token: string) {
@@ -232,7 +248,7 @@ export function createAuthService(
       const developer = await repo.findDeveloper(d);
       if (!developer) throw invalid;
       const expected = Buffer.from(
-        emailChangeSignature(developer.id, e, n, developer.email),
+        emailChangeSignature(developer.id, e, n, developer.email, developer.passwordHash),
         "hex",
       );
       const given = Buffer.from(signature, "hex");
@@ -282,14 +298,18 @@ export function createAuthService(
       const expiresAt = Date.now() + RESET_TTL_MS;
       const signature = resetSignature(developer.id, expiresAt, developer.passwordHash);
       const token = `${Buffer.from(`${developer.id}.${expiresAt}`).toString("base64url")}.${signature}`;
-      await mailer.send({
-        to: developer.email,
-        subject: "Reset your Webhook password",
-        text: `Use this link within 1 hour to choose a new password:\n\n${env.DASHBOARD_ORIGIN}/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email.`,
-      });
+      // Not awaited: waiting for the mailer would make this slower for emails that have an
+      // account than for ones that do not.
+      void mailer
+        .send({
+          to: developer.email,
+          subject: "Reset your Webhook password",
+          text: `Use this link within 1 hour to choose a new password:\n\n${env.DASHBOARD_ORIGIN}/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email.`,
+        })
+        .catch(() => {});
     },
 
-    async resetPassword(input: { token: string; newPassword: string }): Promise<void> {
+    async resetPassword(input: { token: string; newPassword: string }) {
       const invalid = new AppError("VALIDATION_FAILED", "token: invalid_or_expired_token", {
         details: [{ path: "token", issue: "invalid_or_expired_token" }],
       });
@@ -313,6 +333,7 @@ export function createAuthService(
       await repo.setPassword(developer.id, await hashPassword(input.newPassword));
       await repo.deleteSessions(developer.id);
       options.onSessionsEnded?.(developer.id);
+      return { developerId: developer.id, email: developer.email };
     },
   };
 }

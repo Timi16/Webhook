@@ -34,14 +34,21 @@ export function createRateLimiters(limits: RateLimits) {
   return {
     /** 60/min per IP on unauthenticated routes; /v1 has its own limits. */
     global: limiter(limits.global, { skip: (req) => req.path.startsWith("/v1/") }),
-    /** Unauthenticated /v1 traffic: only failed (401) requests count, per IP. */
+    /**
+     * /v1 traffic that was turned away: only refused requests count, per IP. 401 is a bad or
+     * missing key; 403 covers a valid key used from a blocked IP or without the permission, which
+     * the per-developer limit below never sees because it runs after authentication.
+     */
     apiPreAuth: limiter(limits.global, {
-      requestWasSuccessful: (_req, res) => res.statusCode !== 401,
+      requestWasSuccessful: (_req, res) => res.statusCode !== 401 && res.statusCode !== 403,
       skipSuccessfulRequests: true,
     }),
     auth: limiter(limits.auth),
+    // The dashboard (session) and API keys each get their own budget per developer, so a busy
+    // integration cannot lock its owner out of the dashboard, nor the other way round.
     api: limiter(limits.api, {
-      keyGenerator: (req) => req.auth?.developerId ?? ipKeyGenerator(req.ip ?? ""),
+      keyGenerator: (req) =>
+        req.auth ? `${req.auth.via}:${req.auth.developerId}` : ipKeyGenerator(req.ip ?? ""),
     }),
   };
 }

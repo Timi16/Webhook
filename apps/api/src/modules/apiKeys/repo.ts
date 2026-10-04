@@ -79,7 +79,9 @@ export function createApiKeysRepo(prisma: PrismaClient) {
       return prisma.$transaction(async (tx) => {
         const old = await tx.apiKey.findFirst({ where: { id, developerId } });
         const now = new Date();
-        if (!old || (old.revokedAt && old.revokedAt <= now)) return null;
+        // revokedAt set means revoked, or already rolled and on its way out: rolling it again
+        // would push its end date back for ever.
+        if (!old || old.revokedAt) return null;
         if (old.expiresAt && old.expiresAt <= now) return null;
         await tx.apiKey.update({ where: { id: old.id }, data: { revokedAt: oldValidUntil } });
         return tx.apiKey.create({

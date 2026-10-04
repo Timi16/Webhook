@@ -727,27 +727,38 @@ describe("delivery controls through the API", () => {
   });
 
   it("D12: resend while SENDING is 409; after it finishes, resend makes exactly one new attempt", async () => {
-    const { endpoint } = await createEndpoint("/hook?mode=slow");
-    const { eventId, deliveryId } = await queue(developerId, endpoint.id);
-    const dispatcher = makeDispatcher();
+    // Its own receiver, slow enough that the resend request always lands while the first send
+    // is still in flight, however busy the machine is (the shared one answers in 250 ms).
+    const slow = await startMockReceiver({ slowMs: 1_500 });
+    try {
+      const created = await request(t.app)
+        .post("/v1/endpoints")
+        .set(auth())
+        .send({ url: `${slow.url}/hook?mode=slow` });
+      expect(created.status).toBe(201);
+      const { eventId, deliveryId } = await queue(developerId, created.body.endpoint.id as string);
+      const dispatcher = makeDispatcher();
 
-    await dispatcher.tick();
-    await waitFor(() => receiver.requests.length === 1);
-    const during = await request(t.app).post(`/v1/events/${eventId}/resend`).set(auth());
-    expect(during.status).toBe(409);
-    await dispatcher.drain();
-    expect(await delivery(deliveryId)).toMatchObject({ status: "DELIVERED", attemptCount: 1 });
+      await dispatcher.tick();
+      await waitFor(() => slow.requests.length === 1);
+      const during = await request(t.app).post(`/v1/events/${eventId}/resend`).set(auth());
+      expect(during.status).toBe(409);
+      await dispatcher.drain();
+      expect(await delivery(deliveryId)).toMatchObject({ status: "DELIVERED", attemptCount: 1 });
 
-    const after = await request(t.app).post(`/v1/events/${eventId}/resend`).set(auth());
-    expect(after.status).toBe(202);
-    await makeQueuedDue();
-    await pass(dispatcher);
-    expect(await pass(dispatcher)).toBe(0);
+      const after = await request(t.app).post(`/v1/events/${eventId}/resend`).set(auth());
+      expect(after.status).toBe(202);
+      await makeQueuedDue();
+      await pass(dispatcher);
+      expect(await pass(dispatcher)).toBe(0);
 
-    const row = await delivery(deliveryId);
-    expect(row).toMatchObject({ status: "DELIVERED", attemptCount: 2 });
-    expect(row.attempts.map((a) => a.number)).toEqual([1, 2]);
-    expect(receiver.requests.map((r) => r.headers["webhook-id"])).toEqual([eventId, eventId]);
+      const row = await delivery(deliveryId);
+      expect(row).toMatchObject({ status: "DELIVERED", attemptCount: 2 });
+      expect(row.attempts.map((a) => a.number)).toEqual([1, 2]);
+      expect(slow.requests.map((r) => r.headers["webhook-id"])).toEqual([eventId, eventId]);
+    } finally {
+      await slow.close();
+    }
   });
 
   it("D14: re-enabling an endpoint makes it ACTIVE but replays nothing until Replay is used", async () => {

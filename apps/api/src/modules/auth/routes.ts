@@ -273,6 +273,13 @@ export function createAuthRouter(
       status: 204,
       body: resetPasswordSchema,
       before,
+      audit: {
+        action: "account.password_reset",
+        target: (r) => {
+          const done = r as { developerId: string; email: string };
+          return { id: done.developerId, label: done.email, developerId: done.developerId };
+        },
+      },
     },
     ({ body }) => service.resetPassword(body),
   );

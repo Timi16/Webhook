@@ -78,7 +78,9 @@ export function createEndpointsRepo(prisma: PrismaClient) {
           where: { id: { in: cancelled.map((d) => d.id) } },
           data: { status: "CANCELLED", leaseUntil: null },
         });
-        for (const d of cancelled) {
+        // Each one refreshes an open dashboard; past a screenful that is thousands of statements
+        // inside this transaction for nothing, and the endpoint notice below refreshes it anyway.
+        for (const d of cancelled.slice(0, 50)) {
           await notify(tx, CHANNELS.deliveriesUpdated, {
             developerId,
             deliveryId: d.id,

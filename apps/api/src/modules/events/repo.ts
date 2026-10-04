@@ -81,11 +81,18 @@ export function createEventsRepo(prisma: PrismaClient) {
         const delivery = event?.deliveries[0];
         if (!event || !delivery) return "not_found";
         // Lock the rows so we never race the dispatcher's claim.
-        const locked = await tx.$queryRaw<{ id: string; status: DeliveryStatus; live: boolean }[]>`
-          SELECT id, status, ("leaseUntil" IS NOT NULL AND "leaseUntil" > now()) AS live
-          FROM "Delivery" WHERE "eventId" = ${eventId} FOR UPDATE`;
+        const locked = await tx.$queryRaw<
+          { id: string; status: DeliveryStatus; live: boolean; gone: boolean }[]
+        >`
+          SELECT d.id, d.status, (d."leaseUntil" IS NOT NULL AND d."leaseUntil" > now()) AS live,
+                 (e."deletedAt" IS NOT NULL) AS gone
+          FROM "Delivery" d JOIN "Endpoint" e ON e.id = d."endpointId"
+          WHERE d."eventId" = ${eventId} FOR UPDATE OF d`;
         if (locked.some((d) => d.status === "SENDING" && d.live)) return "sending";
-        const resendable = locked.filter((d) => d.status !== "CANCELLED").map((d) => d.id);
+        // A delivery to a deleted endpoint would be queued and never claimed.
+        const resendable = locked
+          .filter((d) => d.status !== "CANCELLED" && !d.gone)
+          .map((d) => d.id);
         if (resendable.length === 0) return "cancelled";
         await tx.delivery.updateMany({
           where: { id: { in: resendable } },

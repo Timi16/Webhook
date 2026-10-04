@@ -289,8 +289,15 @@ export class Dispatcher {
       return endpointChange;
     });
 
-    if (change?.status === "DISABLED")
-      await this.emailDisabled(claimed.endpointId, change.disabledReason);
+    if (change?.status === "DISABLED") {
+      // The delivery is already recorded; a mailer problem is its own failure, logged as such.
+      await this.emailDisabled(claimed.endpointId, change.disabledReason).catch((err: unknown) =>
+        this.deps.logger.error(
+          { err, endpointId: claimed.endpointId },
+          "could not email the developer about a disabled endpoint",
+        ),
+      );
+    }
   }
 
   private async emailDisabled(endpointId: string, reason: string | null): Promise<void> {

@@ -127,6 +127,10 @@ export function createApiKeysService(repo: ApiKeysRepo, maxApiKeys = 20) {
      * hours so the new one can be deployed without downtime; its revokedAt holds that end date.
      */
     async roll(developerId: string, id: string) {
+      // During the overlap both keys are active, so a roll needs room for one more.
+      if ((await repo.countActive(developerId)) >= maxApiKeys) {
+        throw new AppError("CONFLICT", `API key limit reached (${maxApiKeys}); revoke one first`);
+      }
       const { key, prefix, keyHash } = generateApiKey();
       const apiKey = await repo.roll(
         developerId,
@@ -136,7 +140,10 @@ export function createApiKeysService(repo: ApiKeysRepo, maxApiKeys = 20) {
       );
       if (!apiKey) {
         if (await repo.find(developerId, id))
-          throw new AppError("CONFLICT", "This key is revoked or expired and can't be rolled");
+          throw new AppError(
+            "CONFLICT",
+            "This key is revoked, expired or already rolled and can't be rolled",
+          );
         throw notFound();
       }
       return { apiKey: serialize(apiKey), key };

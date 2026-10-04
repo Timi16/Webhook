@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { CHANNELS, notify } from "../db/notify.js";
 import type { Logger } from "../lib/logger.js";
 import { loadCursor, loadNetworkGeneration, saveCursor, tagPayment } from "./cursor.js";
-import { processPayment } from "./matcher.js";
+import { processPayment, type EndpointEvents } from "./matcher.js";
 import type { HorizonBackfillSource } from "./sources/horizonBackfill.js";
 import type { EventCursor, StellarSource } from "./types.js";
 import type { WatchedSet } from "./watchedSet.js";
@@ -10,6 +10,8 @@ import type { WatchedSet } from "./watchedSet.js";
 export const BATCH_LIMIT = 200;
 const POLL_INTERVAL_MS = 2_000;
 const RESET_THRESHOLD_LEDGERS = 100;
+/** How long the network must keep looking reset before we act on it. */
+const RESET_CONFIRM_MS = 60_000;
 const TX_TIMEOUT_MS = 15_000;
 const MAX_BACKOFF_MS = 30_000;
 const BUSY_WALLET_EVENTS_PER_MIN = 600;
@@ -22,11 +24,15 @@ export interface IngestionDeps {
   networkPassphrase: string;
   logger: Logger;
   onNetworkReset: (tip: number) => Promise<void>;
+  /** Default one minute. Tests pass 0 to act on the first reading. */
+  resetConfirmMs?: number;
 }
 
 export class Ingestion {
   /** Time of the last completed loop; the watchdog restarts the worker if it goes stale. */
   heartbeat = Date.now();
+  /** When the tip first looked far behind the cursor; cleared as soon as it looks normal again. */
+  private resetSuspectedAt: number | null = null;
   private readonly busy = new Map<
     string,
     { windowStart: number; count: number; warned: boolean }
@@ -47,10 +53,24 @@ export class Ingestion {
     }
 
     if (tip < cursor.ledger - RESET_THRESHOLD_LEDGERS) {
+      // One reading far behind is not a reset: an RPC node that is itself lagging answers the
+      // same way. Acting on it would rewind the cursor, tell every endpoint the network was
+      // reset and send every payment in the re-read range again. So the reading has to hold.
+      this.resetSuspectedAt ??= Date.now();
+      this.heartbeat = Date.now();
+      if (Date.now() - this.resetSuspectedAt < (this.deps.resetConfirmMs ?? RESET_CONFIRM_MS)) {
+        this.deps.logger.warn(
+          { tip, cursor: cursor.ledger },
+          "ledger tip is far behind the cursor; waiting to see if it is a network reset",
+        );
+        return POLL_INTERVAL_MS;
+      }
+      this.resetSuspectedAt = null;
       await this.deps.onNetworkReset(tip);
       this.heartbeat = Date.now();
       return 0;
     }
+    this.resetSuspectedAt = null;
 
     const oldest = await source.oldestLedger();
     if (cursor.ledger < oldest) {
@@ -69,7 +89,9 @@ export class Ingestion {
 
     await prisma.$transaction(
       async (tx) => {
-        for (const p of relevant) await processPayment(tx, p, watchedSet.get(p.to));
+        const endpoints: EndpointEvents = new Map();
+        for (const p of relevant)
+          await processPayment(tx, p, watchedSet.get(p.to), new Date(), endpoints);
         await saveCursor(tx, next, networkPassphrase); // saved even when nothing was relevant
       },
       { timeout: TX_TIMEOUT_MS },
@@ -108,23 +130,36 @@ export class Ingestion {
       "cursor is behind RPC retention, backfilling from Horizon",
     );
     for (const wallet of watchedSet.wallets())
-      await this.backfillWallet(wallet, fromLedger, toLedgerExclusive);
+      await this.backfillWallet(wallet, fromLedger, toLedgerExclusive, true);
   }
 
+  /**
+   * `fromMainLoop` is true only for the retention-gap backfill, which runs inside the main loop:
+   * its pages are that loop's progress. A watch backfill runs beside the loop and must not
+   * refresh the heartbeat, or a stuck loop would be hidden from the watchdog.
+   */
   async backfillWallet(
     wallet: string,
     fromLedger: number,
     toLedgerExclusive: number,
+    fromMainLoop = false,
   ): Promise<void> {
     const { prisma, backfill, watchedSet } = this.deps;
-    this.heartbeat = Date.now();
+    if (fromMainLoop) this.heartbeat = Date.now();
     const generation = await loadNetworkGeneration(prisma);
     for await (const page of backfill.paymentsForWallet(wallet, fromLedger, toLedgerExclusive)) {
-      this.heartbeat = Date.now(); // each page is progress; the watchdog must not restart us mid-backfill
+      if (fromMainLoop) this.heartbeat = Date.now(); // the watchdog must not restart us mid-backfill
       await prisma.$transaction(
         async (tx) => {
+          const endpoints: EndpointEvents = new Map();
           for (const p of page)
-            await processPayment(tx, tagPayment(p, generation), watchedSet.get(p.to));
+            await processPayment(
+              tx,
+              tagPayment(p, generation),
+              watchedSet.get(p.to),
+              new Date(),
+              endpoints,
+            );
         },
         { timeout: TX_TIMEOUT_MS },
       );

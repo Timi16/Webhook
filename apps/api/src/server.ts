@@ -15,9 +15,11 @@ const listener = new PgListener(env.DATABASE_URL, logger);
 const app = buildApp({ env, logger, prisma, listener });
 await listener.start();
 
-const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT }, "webhook-api listening");
-});
+// Behind a reverse proxy the API listens on loopback only, so the proxy is the only way in.
+const host = env.HOST ?? (env.NODE_ENV === "production" ? "127.0.0.1" : undefined);
+const onListening = () =>
+  logger.info({ port: env.PORT, host: host ?? "all" }, "webhook-api listening");
+const server = host ? app.listen(env.PORT, host, onListening) : app.listen(env.PORT, onListening);
 
 let shuttingDown = false;
 

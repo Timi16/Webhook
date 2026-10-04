@@ -170,6 +170,8 @@ value, or on any network passphrase other than testnet's.
 | `RESEND_API_KEY`, `EMAIL_FROM`                       | Optional; emails are logged if the key is absent                                   |
 | `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID` | Optional; alerts are logged if absent                                              |
 | `MAX_CONCURRENT_DELIVERIES`                          | Webhooks sent at the same time, overall. Default 50                                |
+| `HOST`                                               | Address to listen on. Default `127.0.0.1` in production, every interface otherwise |
+| `TRUST_PROXY`                                        | Reverse proxies in front of the API. Default 1 in production, 0 otherwise          |
 | `ALLOW_INSECURE_WEBHOOK_TARGETS`                     | Local development only; refused in production                                      |
 
 ## API
