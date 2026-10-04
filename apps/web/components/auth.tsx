@@ -31,7 +31,7 @@ export function AuthPage({
           {children}
           <p className="auth-alt">{footer}</p>
           <p className="fine" style={{ textAlign: "center" }}>
-            Testnet only. Never paste a secret key (S…) anywhere in this app.
+            
           </p>
         </div>
       </div>
@@ -45,6 +45,7 @@ const ISSUES: Record<string, string> = {
   password_too_short: "Use at least 10 characters.",
   password_too_common: "That password is too common. Try a passphrase.",
   incorrect_password: "That isn't your current password.",
+  same_email: "That is already your email address.",
   invalid_or_expired_token: "This reset link is invalid or has expired. Request a new one.",
 };
 

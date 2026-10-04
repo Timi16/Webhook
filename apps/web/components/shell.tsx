@@ -52,7 +52,7 @@ function Nav() {
         </span>
         <span className="who">
           <span>{displayName}</span>
-          <span className="muted">{developer.email}</span>
+          <span className="muted">{developer.workspace ?? developer.email}</span>
         </span>
       </div>
     </nav>

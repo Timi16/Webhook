@@ -8,11 +8,13 @@ export function Modal({
   children,
   footer,
   onClose,
+  wide,
 }: {
   title: string;
   children: ReactNode;
   footer: ReactNode;
   onClose: () => void;
+  wide?: boolean;
 }) {
   const titleId = useId();
   useEffect(() => {
@@ -25,7 +27,7 @@ export function Modal({
 
   return (
     <div className="overlay">
-      <div className="wh-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={wide ? "wh-modal is-wide" : "wh-modal"} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header>
           <h2 id={titleId}>{title}</h2>
         </header>

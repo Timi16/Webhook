@@ -23,6 +23,7 @@ const STATUSES: Record<string, { tone: Tone; icon: IconName; label: string }> = 
   DISABLED: { tone: "bad", icon: "ban", label: "disabled" },
   PAUSED: { tone: "neutral", icon: "pause", label: "paused" },
   REVOKED: { tone: "neutral", icon: "circle-off", label: "revoked" },
+  EXPIRED: { tone: "neutral", icon: "clock", label: "expired" },
 };
 
 export function StatusBadge({ status }: { status: string }) {

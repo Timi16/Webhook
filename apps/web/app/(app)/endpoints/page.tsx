@@ -42,12 +42,17 @@ function AddEndpoint({
 }) {
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
+  const [rejected_, setRejected] = useState(true);
   const [created, setCreated] = useState<{ endpoint: Endpoint; secret: string }>();
   const state = urlState(url, existing);
   const save = useAction(async () => {
     const result = await api<{ endpoint: Endpoint; secret: string }>("/v1/endpoints", {
       method: "POST",
-      body: { url: url.trim(), ...(description.trim() ? { description: description.trim() } : {}) },
+      body: {
+        url: url.trim(),
+        ...(description.trim() ? { description: description.trim() } : {}),
+        eventTypes: rejected_ ? ["payment.received", "payment.rejected"] : ["payment.received"],
+      },
     });
     setCreated(result);
     onCreated();
@@ -174,9 +179,29 @@ function AddEndpoint({
           placeholder="Production orders service"
         />
       </div>
-      <p className="hint">
-        Which events an endpoint receives is set on each watch that delivers to it.
-      </p>
+      <div className="wh-field">
+        <span style={{ font: "600 13px/16px var(--font-sans)" }}>Events to send</span>
+        <div className="wz-checks">
+          <label className="wz-check">
+            <input type="checkbox" checked disabled />
+            <span>
+              <b>payment.received</b>
+              <span>A payment matched your rules.</span>
+            </span>
+          </label>
+          <label className="wz-check">
+            <input
+              type="checkbox"
+              checked={rejected_}
+              onChange={(e) => setRejected(e.target.checked)}
+            />
+            <span>
+              <b>payment.rejected</b>
+              <span>A payment arrived but missed a rule. The watch must ask for it too.</span>
+            </span>
+          </label>
+        </div>
+      </div>
       {save.error && (
         <div className="wh-help is-bad" role="alert">
           <Icon name="alert-circle" />
@@ -227,6 +252,16 @@ function EndpointCard({ endpoint, onChanged }: { endpoint: Endpoint; onChanged: 
     setDialog(undefined);
     onChanged();
   });
+  const sendsRejected = endpoint.eventTypes.includes("payment.rejected");
+  const setEvents = useAction(async (withRejected: boolean) => {
+    await api(`/v1/endpoints/${endpoint.id}`, {
+      method: "PATCH",
+      body: {
+        eventTypes: withRejected ? ["payment.received", "payment.rejected"] : ["payment.received"],
+      },
+    });
+    onChanged();
+  });
   const remove = useAction(async () => {
     await api(`/v1/endpoints/${endpoint.id}`, { method: "DELETE" });
     setDialog(undefined);
@@ -243,7 +278,7 @@ function EndpointCard({ endpoint, onChanged }: { endpoint: Endpoint; onChanged: 
   const attempt = result?.attempt;
   const attemptOk =
     attempt?.statusCode != null && attempt.statusCode >= 200 && attempt.statusCode < 300;
-  const error = test.error ?? enable.error ?? replay.error;
+  const error = test.error ?? enable.error ?? replay.error ?? setEvents.error;
 
   return (
     <section className="wh-panel">
@@ -265,6 +300,19 @@ function EndpointCard({ endpoint, onChanged }: { endpoint: Endpoint; onChanged: 
               <dd style={{ fontFamily: "var(--font-sans)" }}>{endpoint.description}</dd>
             </>
           )}
+          <dt>Events to send</dt>
+          <dd className="wh-row" style={{ fontFamily: "var(--font-sans)", flexWrap: "wrap" }}>
+            <span className="scope-chip">payment.received</span>
+            <label className="wh-check" style={{ whiteSpace: "nowrap" }}>
+              <input
+                type="checkbox"
+                checked={sendsRejected}
+                disabled={setEvents.pending}
+                onChange={(e) => void setEvents.run(e.target.checked)}
+              />
+              <span className="mono">payment.rejected</span>
+            </label>
+          </dd>
           <dt>Failed events in a row</dt>
           <dd>{endpoint.consecutiveFailures}</dd>
           <dt>Last 24 hours</dt>

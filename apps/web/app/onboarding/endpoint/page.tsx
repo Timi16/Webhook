@@ -65,7 +65,7 @@ function EndpointStep({ setup }: { setup: Setup }) {
     setup.reload();
   });
   const save = useAction(async () => {
-    const result = await api<{ endpoint: Endpoint; secret: string }>("/v1/endpoints", { method: "POST", body: { url: url.trim() } });
+    const result = await api<{ endpoint: Endpoint; secret: string }>("/v1/endpoints", { method: "POST", body: { url: url.trim(), eventTypes: notifyRejected ? ["payment.received", "payment.rejected"] : ["payment.received"] } });
     setCreated(result);
     if (!setup.watch) await createWatch.run(result.endpoint.id);
     else setup.reload();

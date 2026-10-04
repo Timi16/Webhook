@@ -1,5 +1,6 @@
 // The API's response shapes, taken from the same schemas that document it.
 import type {
+  apiKeyDetailResponse,
   apiKeyResponse,
   deliveryResponse,
   developerResponse,
@@ -17,6 +18,7 @@ import type { z } from "zod";
 
 export type Developer = z.infer<typeof developerResponse>;
 export type ApiKey = z.infer<typeof apiKeyResponse>;
+export type ApiKeyDetail = z.infer<typeof apiKeyDetailResponse>;
 export type Endpoint = z.infer<typeof endpointResponse>;
 export type EndpointDetail = z.infer<typeof endpointDetailResponse>["endpoint"];
 export type Watch = z.infer<typeof watchResponse>;

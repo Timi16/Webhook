@@ -16,7 +16,6 @@ const THEMES: { value: ThemeChoice; label: string; icon: IconName }[] = [
   { value: "light", label: "Light", icon: "sun" },
   { value: "dark", label: "Dark", icon: "moon" },
 ];
-const CONFIRM_PHRASE = "delete my account";
 
 function Saved({ show }: { show: boolean }) {
   return show ? (
@@ -36,12 +35,30 @@ export default function SettingsPage() {
   const keys = useApi<{ data: ApiKey[] }>("/v1/api-keys");
 
   const [name, setName] = useState(developer.name ?? "");
+  const [workspace, setWorkspace] = useState(developer.workspace ?? "");
   const [nameSaved, setNameSaved] = useState(false);
+  const profileChanged = name.trim() !== (developer.name ?? "") || workspace.trim() !== (developer.workspace ?? "");
   const saveName = useAction(async () => {
-    await api("/auth/me", { method: "PATCH", body: { name: name.trim() } });
+    await api("/auth/me", {
+      method: "PATCH",
+      body: { ...(name.trim() ? { name: name.trim() } : {}), workspace: workspace.trim() || null },
+    });
     setNameSaved(true);
     reload();
   });
+
+  const [email, setEmail] = useState(developer.email);
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailSentTo, setEmailSentTo] = useState<string>();
+  const changeEmail = useAction(async () => {
+    const next = email.trim().toLowerCase();
+    await api("/auth/email", { method: "POST", body: { email: next, password: emailPassword } });
+    setEmailSentTo(next);
+    setEmailPassword("");
+  });
+  const emailConflict = changeEmail.error?.code === "CONFLICT" ? "An account with this email already exists." : undefined;
+  // Deleting everything is confirmed by typing the workspace's name, as the design asks.
+  const CONFIRM_PHRASE = `delete ${(developer.workspace ?? "my account").toLowerCase()}`;
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -69,7 +86,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHead title="Settings" sub="Your account." />
+      <PageHead title="Settings" sub="Your account. Changes apply to this workspace only." />
 
       <section className="wh-panel">
         <header>
@@ -97,8 +114,19 @@ export default function SettingsPage() {
                   }}
                 />
               </Field>
-              <Field id="email" label="Email address" hint="Your login. It can't be changed here yet.">
-                <input id="email" className="wh-input" type="email" value={developer.email} readOnly aria-describedby="email-hint" />
+              <Field id="workspace" label="Workspace" hint="Your company or project. Shown in the sidebar.">
+                <input
+                  id="workspace"
+                  className="wh-input"
+                  maxLength={100}
+                  autoComplete="organization"
+                  placeholder="Shopkit"
+                  value={workspace}
+                  onChange={(e) => {
+                    setWorkspace(e.target.value);
+                    setNameSaved(false);
+                  }}
+                />
               </Field>
             </div>
             {saveName.error && <ErrorAlert error={saveName.error} title="Couldn't save your name." />}
@@ -108,8 +136,56 @@ export default function SettingsPage() {
             <button className="wh-btn is-ghost" type="button" disabled={logout.pending} onClick={() => void logout.run()}>
               Log out
             </button>
-            <button className="wh-btn is-primary" type="submit" disabled={!name.trim() || name.trim() === (developer.name ?? "") || saveName.pending}>
+            <button className="wh-btn is-primary" type="submit" disabled={!profileChanged || saveName.pending}>
               Save changes
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="wh-panel">
+        <header>
+          <span className="h">Email</span>
+        </header>
+        <form
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            void changeEmail.run();
+          }}
+        >
+          <div className="panel-body">
+            <div className="form-grid">
+              <Field id="email" label="Email address" hint="We'll send a confirmation link to the new address. The change applies once you click it." error={emailConflict ?? issueText(changeEmail.error?.issueFor("email"))}>
+                <input
+                  id="email"
+                  className="wh-input"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  aria-invalid={emailConflict || changeEmail.error?.issueFor("email") ? true : undefined}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setEmailSentTo(undefined);
+                  }}
+                />
+              </Field>
+              <Field id="email-password" label="Your password" hint="To confirm it's you." error={issueText(changeEmail.error?.issueFor("password"))}>
+                <input id="email-password" className="wh-input" type="password" autoComplete="current-password" value={emailPassword} aria-invalid={changeEmail.error?.issueFor("password") ? true : undefined} onChange={(e) => setEmailPassword(e.target.value)} />
+              </Field>
+            </div>
+            {emailSentTo && (
+              <div className="wh-alert is-neutral" role="status">
+                <Icon name="send" />
+                <div className="body">
+                  <strong>Check {emailSentTo}.</strong> Open the link we sent within 1 hour to finish. Until then you still log in with {developer.email}.
+                </div>
+              </div>
+            )}
+            {changeEmail.error && !emailConflict && changeEmail.error.details.length === 0 && <ErrorAlert error={changeEmail.error} title="Couldn't start the email change." />}
+          </div>
+          <div className="panel-foot">
+            <button className="wh-btn" type="submit" disabled={!emailPassword || email.trim().toLowerCase() === developer.email || !email.trim() || changeEmail.pending}>
+              Update email
             </button>
           </div>
         </form>
@@ -194,7 +270,7 @@ export default function SettingsPage() {
         </header>
         <div className="panel-body">
           <p className="hint" style={{ color: "var(--ink)" }}>
-            Deletes your account, {count(watches.data?.data.length, "watch").replace("watchs", "watches")}, {count(endpoints.data?.data.length, "endpoint")}, {count(keys.data?.data.length, "API key")} and all payment and webhook history. Webhooks stop immediately. This can't be undone.
+            Deletes your {developer.workspace ? "workspace" : "account"}, {count(watches.data?.data.length, "watch").replace("watchs", "watches")}, {count(endpoints.data?.data.length, "endpoint")}, {count(keys.data?.data.length, "API key")} and all payment and webhook history. Webhooks stop immediately. This can't be undone.
           </p>
           <div className="form-grid">
             <div className="wh-field">
