@@ -220,3 +220,185 @@ body {
     display: none;
   }
 }
+
+/* Status page: an overall banner, then each component with one bar per day for 90 days. */
+.st {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--space-12) var(--space-4) var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.st-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+.st-head .brand {
+  color: var(--ink);
+  text-decoration: none;
+}
+.st-word {
+  font: 800 22px/1 var(--font-display);
+  letter-spacing: -0.03em;
+  color: var(--ink-muted);
+}
+.st-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 24px;
+  border: 2px solid var(--hard);
+  border-radius: 22px;
+  box-shadow: 5px 5px 0 var(--hard);
+  background: var(--surface);
+}
+.st-banner h1 {
+  margin: 0;
+  font: 800 26px/1.15 var(--font-display);
+  letter-spacing: -0.03em;
+}
+.st-banner .when {
+  margin-left: auto;
+  font: 400 12px/1 var(--font-mono);
+  opacity: 0.85;
+}
+.st-banner.is-ok {
+  background: var(--green);
+  color: #fff;
+}
+.st-banner.is-warn {
+  background: var(--yellow);
+  color: #1b1209;
+}
+.st-banner.is-bad {
+  background: var(--bad);
+  color: #fff;
+}
+.st-meta {
+  font-size: 13px;
+  color: var(--ink-muted);
+  text-align: right;
+}
+.st-list {
+  border: 2px solid var(--hard);
+  border-radius: 22px;
+  box-shadow: 5px 5px 0 var(--hard);
+  background: var(--surface);
+  overflow: hidden;
+}
+.st-comp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px;
+}
+.st-comp + .st-comp {
+  border-top: 2px dashed var(--rule);
+}
+.st-comp .top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.st-comp .top b {
+  display: block;
+  font: 800 18px/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+}
+.st-comp .top span {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.st-comp .top .state {
+  flex: none;
+  font: 600 14px/1.4 var(--font-sans);
+}
+.st-comp .state.is-ok {
+  color: var(--ok);
+}
+.st-comp .state.is-warn {
+  color: var(--warn);
+}
+.st-comp .state.is-bad {
+  color: var(--bad);
+}
+.st-bars {
+  display: flex;
+  gap: 2px;
+  height: 36px;
+}
+.st-bars i {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 2px;
+}
+.st-bars i:hover {
+  outline: 2px solid var(--hard);
+  outline-offset: 1px;
+}
+.st i.d-ok {
+  background: var(--green);
+}
+.st i.d-slow {
+  background: var(--yellow);
+}
+.st i.d-partial {
+  background: var(--orange);
+}
+.st i.d-major {
+  background: var(--bad);
+}
+.st i.d-none {
+  background: var(--rule);
+}
+.st-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 400 12px/1 var(--font-mono);
+  color: var(--ink-muted);
+}
+.st-foot hr {
+  flex: 1;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--rule-strong);
+}
+.st-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font: 400 12px/16px var(--font-mono);
+  color: var(--ink-muted);
+}
+.st-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+}
+.st-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .st-bars {
+    gap: 1px;
+    height: 28px;
+  }
+  .st-comp {
+    padding: 16px;
+  }
+  .st-banner h1 {
+    font-size: 22px;
+  }
+}
