@@ -94,7 +94,7 @@ function Chart({ hourly }: { hourly: Overview["hourly"] }) {
             rejected
           </span>
           <span>
-            <i style={{ background: "var(--signal)" }} />
+            <i className="now" />
             this hour
           </span>
         </span>

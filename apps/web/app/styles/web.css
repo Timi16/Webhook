@@ -16,3 +16,18 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The current hour keeps its verified/rejected colours (the design painted it all orange, which
+   read as "rejected"); a ring marks it instead. */
+.app .bar.is-now .ok {
+  background: var(--green);
+}
+.app .bar.is-now {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.app .legend i.now {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--orange);
+}

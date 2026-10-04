@@ -155,7 +155,7 @@ export default function SettingsPage() {
         >
           <div className="panel-body">
             <div className="form-grid">
-              <Field id="email" label="Email address" hint="We'll send a confirmation link to the new address. The change applies once you click it." error={emailConflict ?? issueText(changeEmail.error?.issueFor("email"))}>
+              <Field id="email" label="Email address" hint="Type a new address to change it. We'll send a confirmation link there; the change applies once you click it." error={emailConflict ?? issueText(changeEmail.error?.issueFor("email"))}>
                 <input
                   id="email"
                   className="wh-input"
