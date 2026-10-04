@@ -34,6 +34,9 @@ import { createEventsService } from "./modules/events/service.js";
 import { createHealthRepo } from "./modules/health/repo.js";
 import { createHealthRouter } from "./modules/health/routes.js";
 import { createHealthService } from "./modules/health/service.js";
+import { createOverviewRepo } from "./modules/overview/repo.js";
+import { createOverviewRouter } from "./modules/overview/routes.js";
+import { createOverviewService } from "./modules/overview/service.js";
 import { createPaymentsRepo } from "./modules/payments/repo.js";
 import { createPaymentsRouter } from "./modules/payments/routes.js";
 import { createPaymentsService } from "./modules/payments/service.js";
@@ -151,6 +154,7 @@ export function buildApp(deps: AppDeps): Express {
       createWatchesService(createWatchesRepo(prisma), horizon, deps.quotas?.watches),
     ),
   );
+  app.use(createOverviewRouter(api, createOverviewService(createOverviewRepo(prisma))));
   app.use(createPaymentsRouter(api, createPaymentsService(createPaymentsRepo(prisma))));
   app.use(createEventsRouter(api, createEventsService(createEventsRepo(prisma))));
   app.use(createStreamRouter(api, hub));

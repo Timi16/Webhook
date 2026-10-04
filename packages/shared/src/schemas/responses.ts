@@ -250,3 +250,27 @@ export const eventDetailResponse = z.strictObject({
 });
 
 export { healthResponseSchema as healthResponse };
+
+export const overviewResponse = z.strictObject({
+  windowHours: z.number().int(),
+  payments: z.strictObject({
+    total: z.number().int().describe("Payments evaluated by your watches in the window"),
+    verified: z.number().int(),
+    rejected: z.number().int(),
+    previousTotal: z.number().int().describe("The same count for the window before this one"),
+  }),
+  deliveries: z.strictObject({
+    delivered: z.number().int(),
+    retrying: z.number().int(),
+    failed: z.number().int(),
+    pending: z.number().int(),
+    medianMs: z.number().int().nullable().describe("Median duration of successful attempts"),
+    p95Ms: z.number().int().nullable(),
+  }),
+  watches: z.strictObject({ active: z.number().int(), paused: z.number().int() }),
+  hourly: z
+    .array(
+      z.strictObject({ hour: timestamp, verified: z.number().int(), rejected: z.number().int() }),
+    )
+    .describe("One entry per hour, oldest first; the last one is the current hour"),
+});

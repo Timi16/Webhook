@@ -987,6 +987,14 @@ describe("tenant isolation", () => {
       const res = await request(t.app).get(path).set(bearer(malloryKey));
       expect(res.body.data, path).toEqual([]);
     }
+    const overview = await request(t.app).get("/v1/overview").set(bearer(malloryKey));
+    expect(overview.body.payments).toEqual({
+      total: 0,
+      verified: 0,
+      rejected: 0,
+      previousTotal: 0,
+    });
+    expect(overview.body.watches).toEqual({ active: 0, paused: 0 });
     expect(
       (await request(t.app).get(`/v1/payments?watchId=${ids.watch}`).set(bearer(malloryKey))).body
         .data,
@@ -1096,6 +1104,16 @@ describe("documented responses", () => {
       toMuxedId: "12",
     });
     matches(R.watchDetailResponse, await api("get", `/v1/watches/${watchId}`));
+    const overview = await api("get", "/v1/overview");
+    matches(R.overviewResponse, overview);
+    expect(overview.body).toMatchObject({
+      windowHours: 24,
+      payments: { total: 2, verified: 1, rejected: 1, previousTotal: 0 },
+      deliveries: { pending: 2, delivered: 0, medianMs: null },
+      watches: { active: 3, paused: 0 },
+    });
+    expect(overview.body.hourly).toHaveLength(24);
+    expect(overview.body.hourly.at(-1)).toMatchObject({ verified: 1, rejected: 1 });
     matches(R.paymentListResponse, await api("get", "/v1/payments?limit=1"));
     matches(R.paymentListResponse, await api("get", "/v1/payments"));
     matches(R.paymentDetailResponse, await api("get", `/v1/payments/${verified.eventId}`));
