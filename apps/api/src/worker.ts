@@ -15,8 +15,11 @@ import { WatchedSet } from "./engine/watchedSet.js";
 import { createAlerter } from "./lib/alert.js";
 import { createLogger } from "./lib/logger.js";
 import { createMailer } from "./lib/mailer.js";
+import { createStatusRepo, type CheckResult } from "./modules/status/repo.js";
+import { createStatusService } from "./modules/status/service.js";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const STATUS_SAMPLE_INTERVAL_MS = 60_000;
 
 const env = loadEnv();
 const logger = createLogger(env);
@@ -102,6 +105,27 @@ const watchdogTimer = setInterval(() => {
   watchdog.check().catch((err: unknown) => logger.error({ err }, "watchdog check failed"));
 }, WATCHDOG_INTERVAL_MS);
 
+// Uptime history for the status page: once a minute, check each part of the service and count it.
+const statusService = createStatusService(createStatusRepo(prisma), {
+  // The API is a separate process; it is up if its health check answers.
+  checkApi: async (): Promise<CheckResult> => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${env.PORT}/health`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      return res.ok ? "ok" : "down";
+    } catch {
+      return "down";
+    }
+  },
+});
+const sampleStatus = () =>
+  statusService
+    .sample()
+    .catch((err: unknown) => logger.error({ err }, "status sample failed"));
+const statusTimer = setInterval(() => void sampleStatus(), STATUS_SAMPLE_INTERVAL_MS);
+void sampleStatus();
+
 logger.info(
   { wallets: watchedSet.size, insecureTargets: env.ALLOW_INSECURE_WEBHOOK_TARGETS === "true" },
   "webhook-worker started",
@@ -118,6 +142,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(reconciliationTimer);
   clearInterval(watchdogTimer);
   clearInterval(backfillTimer);
+  clearInterval(statusTimer);
   watchedSet.stop();
   const force = setTimeout(() => process.exit(0), SHUTDOWN_TIMEOUT_MS + 2_000);
   force.unref();

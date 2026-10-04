@@ -234,3 +234,15 @@ model Cursor {
   lastNetworkResetAt DateTime?
   updatedAt          DateTime  @updatedAt
 }
+
+/// Uptime history for the public status page: one row per UTC day and component, counting the
+/// once-a-minute checks the worker makes. A day with no row has no data (the monitor was not running).
+model StatusDay {
+  day       DateTime @db.Date
+  component String   // "api" | "detection" | "delivery"
+  ok        Int      @default(0)
+  degraded  Int      @default(0)
+  down      Int      @default(0)
+
+  @@id([day, component])
+}

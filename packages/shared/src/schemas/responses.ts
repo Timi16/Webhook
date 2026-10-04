@@ -334,3 +334,37 @@ export const accountResponse = z.strictObject({
     .array(assetResponse)
     .describe("Assets the account can receive: XLM plus one per trustline"),
 });
+
+export const COMPONENT_STATES = ["operational", "degraded", "outage"] as const;
+export const DAY_STATES = [
+  "operational",
+  "degraded",
+  "partial_outage",
+  "major_outage",
+  "no_data",
+] as const;
+export const statusResponse = z.strictObject({
+  status: z.enum(COMPONENT_STATES).describe("The worst current state of any component"),
+  updatedAt: timestamp,
+  components: z.array(
+    z.strictObject({
+      key: z.string(),
+      name: z.string(),
+      description: z.string(),
+      status: z.enum(COMPONENT_STATES).describe("Right now"),
+      uptimePercent: z
+        .number()
+        .nullable()
+        .describe("Share of checks that passed over the days with data; null with no data"),
+      days: z
+        .array(
+          z.strictObject({
+            date: z.string().describe("UTC day, YYYY-MM-DD"),
+            status: z.enum(DAY_STATES),
+            uptimePercent: z.number().nullable(),
+          }),
+        )
+        .describe("90 entries, oldest first, ending today"),
+    }),
+  ),
+});
