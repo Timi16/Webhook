@@ -19,6 +19,7 @@ type Tone = "ok" | "warn" | "bad" | "neutral";
 const ACTIONS: Record<string, { title: string; tone: Tone }> = {
   "account.created": { title: "Account created", tone: "ok" },
   "account.logged_in": { title: "Logged in", tone: "neutral" },
+  "account.login_failed": { title: "Login failed: wrong password", tone: "bad" },
   "account.profile_updated": { title: "Profile updated", tone: "neutral" },
   "account.password_changed": { title: "Password changed", tone: "warn" },
   "account.password_reset": { title: "Password reset by email link", tone: "warn" },
