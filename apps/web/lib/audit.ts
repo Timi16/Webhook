@@ -21,6 +21,7 @@ const ACTIONS: Record<string, { title: string; tone: Tone }> = {
   "account.logged_in": { title: "Logged in", tone: "neutral" },
   "account.profile_updated": { title: "Profile updated", tone: "neutral" },
   "account.password_changed": { title: "Password changed", tone: "warn" },
+  "account.password_reset": { title: "Password reset by email link", tone: "warn" },
   "account.email_change_requested": { title: "Email change requested", tone: "warn" },
   "account.email_changed": { title: "Email changed", tone: "warn" },
   "api_key.created": { title: "API key created", tone: "ok" },
