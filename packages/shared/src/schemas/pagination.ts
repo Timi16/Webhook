@@ -44,6 +44,14 @@ export const listEventsQuerySchema = z.strictObject({
     .optional(),
   deliveryStatus: z.enum(DELIVERY_STATUSES).optional(),
   watchId: z.string().min(1).max(64).optional(),
+  endpointId: z.string().min(1).max(64).optional(),
+  q: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Matches the start of an event ID or payment ID"),
   ...paginationQuery,
 });
 

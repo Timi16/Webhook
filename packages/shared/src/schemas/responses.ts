@@ -27,6 +27,7 @@ export const apiKeyResponse = z.strictObject({
   revokedAt: timestamp.nullable(),
   createdAt: timestamp,
 });
+export const apiKeyEnvelope = z.strictObject({ apiKey: apiKeyResponse });
 export const apiKeyListResponse = z.strictObject({ data: z.array(apiKeyResponse) });
 export const apiKeyCreatedResponse = z.strictObject({
   apiKey: apiKeyResponse,

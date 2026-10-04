@@ -23,3 +23,9 @@ export const resetPasswordSchema = z.strictObject({
 });
 
 export const createApiKeySchema = z.strictObject({ name: z.string().trim().min(1).max(100) });
+export const deleteApiKeyQuerySchema = z.strictObject({
+  permanent: z.enum(["true", "false"]).optional(),
+});
+
+export const updateProfileSchema = z.strictObject({ name: z.string().trim().min(1).max(100) });
+export const deleteAccountSchema = z.strictObject({ password: z.string().min(1).max(200) });

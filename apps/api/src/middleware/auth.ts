@@ -30,7 +30,8 @@ export function createAuth(prisma: PrismaClient) {
   async function fromApiKey(key: string): Promise<AuthContext | null> {
     if (!key.startsWith(API_KEY_PREFIX)) return null;
     const apiKey = await prisma.apiKey.findUnique({ where: { keyHash: sha256Hex(key) } });
-    if (!apiKey || apiKey.revokedAt) return null;
+    // A rolled key carries a revokedAt in the future: it works until then.
+    if (!apiKey || (apiKey.revokedAt && apiKey.revokedAt <= new Date())) return null;
     // lastUsedAt is updated at most once a minute.
     if (!apiKey.lastUsedAt || Date.now() - apiKey.lastUsedAt.getTime() > LAST_USED_INTERVAL_MS) {
       prisma.apiKey

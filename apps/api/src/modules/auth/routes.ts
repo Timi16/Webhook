@@ -1,10 +1,12 @@
 import {
   changePasswordSchema,
+  deleteAccountSchema,
   developerEnvelope,
   forgotPasswordSchema,
   loginSchema,
   resetPasswordSchema,
   signupSchema,
+  updateProfileSchema,
 } from "@webhook/shared";
 import {
   Router,
@@ -120,6 +122,41 @@ export function createAuthRouter(
       auth: "session",
     },
     ({ auth }) => service.me(auth.developerId),
+  );
+
+  api(
+    router,
+    {
+      method: "patch",
+      path: "/auth/me",
+      response: developerEnvelope,
+      summary: "Update your profile",
+      description: "Changes the name shown in the dashboard.",
+      tag: "Auth",
+      auth: "session",
+      body: updateProfileSchema,
+    },
+    ({ auth, body }) => service.updateProfile(auth.developerId, body),
+  );
+
+  api(
+    router,
+    {
+      method: "delete",
+      path: "/auth/me",
+      summary: "Delete your account",
+      description:
+        "Deletes the account with its watches, endpoints, API keys and all payment and webhook history. Webhooks stop immediately. Needs the current password. This cannot be undone.",
+      tag: "Auth",
+      auth: "session",
+      status: 204,
+      body: deleteAccountSchema,
+      before: [guards.authLimit],
+    },
+    async ({ auth, body, res }) => {
+      await service.deleteAccount(auth.developerId, body.password);
+      res.clearCookie(SESSION_COOKIE, cookieOptions);
+    },
   );
 
   api(

@@ -6,6 +6,9 @@ export interface EventFilter {
   type?: string | undefined;
   deliveryStatus?: DeliveryStatus | undefined;
   watchId?: string | undefined;
+  endpointId?: string | undefined;
+  /** Start of an event ID or payment ID. */
+  q?: string | undefined;
 }
 
 export type ResendResult = "not_found" | "sending" | "cancelled" | { deliveryId: string };
@@ -17,10 +20,29 @@ export function createEventsRepo(prisma: PrismaClient) {
         where: {
           developerId,
           ...(filter.type ? { type: filter.type } : {}),
-          ...(filter.deliveryStatus
-            ? { deliveries: { some: { status: filter.deliveryStatus } } }
+          ...(filter.deliveryStatus || filter.endpointId
+            ? {
+                deliveries: {
+                  some: {
+                    ...(filter.deliveryStatus ? { status: filter.deliveryStatus } : {}),
+                    ...(filter.endpointId ? { endpointId: filter.endpointId } : {}),
+                  },
+                },
+              }
             : {}),
           ...(filter.watchId ? { match: { watchId: filter.watchId } } : {}),
+          ...(filter.q
+            ? {
+                AND: [
+                  {
+                    OR: [
+                      { id: { startsWith: filter.q } },
+                      { match: { paymentEventId: { startsWith: filter.q } } },
+                    ],
+                  },
+                ],
+              }
+            : {}),
           ...(cursor
             ? {
                 OR: [

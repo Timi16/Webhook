@@ -216,6 +216,53 @@ describe("auth", () => {
     expect(login.status).toBe(200);
   });
 
+  it("updates the profile name", async () => {
+    const dev = await t.signup();
+    const res = await request(t.app)
+      .patch("/auth/me")
+      .set("Cookie", dev.cookie)
+      .set("Origin", ORIGIN)
+      .send({ name: "  Tolu Adebayo " });
+    expect(res.body.developer.name).toBe("Tolu Adebayo");
+    expect(
+      (
+        await request(t.app)
+          .patch("/auth/me")
+          .set("Cookie", dev.cookie)
+          .set("Origin", ORIGIN)
+          .send({ name: "" })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("deletes an account with everything it owns, only with the right password", async () => {
+    const dev = await t.signup();
+    const key = (await dev.createApiKey()).key;
+    const { endpoint } = await createEndpoint(key);
+    const { watch } = await createWatch(endpoint.id, {}, key);
+    const payment = await pay(watch.id);
+    const remove = (password: string) =>
+      request(t.app)
+        .delete("/auth/me")
+        .set("Cookie", dev.cookie)
+        .set("Origin", ORIGIN)
+        .send({ password });
+
+    expect((await remove("not my password")).status).toBe(400);
+    expect(await prisma.developer.count({ where: { id: dev.developerId } })).toBe(1);
+
+    expect((await remove(PASSWORD)).status).toBe(204);
+    expect(await prisma.developer.count({ where: { id: dev.developerId } })).toBe(0);
+    expect(await prisma.watch.count({ where: { id: watch.id } })).toBe(0);
+    expect(await prisma.endpoint.count({ where: { id: endpoint.id } })).toBe(0);
+    expect(await prisma.chainPayment.count({ where: { eventId: payment.eventId } })).toBe(0);
+    expect(await prisma.webhookEvent.count({ where: { developerId: dev.developerId } })).toBe(0);
+    expect((await request(t.app).get("/auth/me").set("Cookie", dev.cookie)).status).toBe(401);
+    expect((await request(t.app).get("/v1/watches").set(bearer(key))).status).toBe(401);
+    // Other developers are untouched.
+    expect((await request(t.app).get("/v1/watches").set(bearer(aliceKey))).status).toBe(200);
+  });
+
   it("limits auth attempts to 5 a minute per IP", async () => {
     const limited = makeTestApp(db, { rateLimits: { global: 1000, auth: 5, api: 1000 } });
     const attempt = () =>
@@ -254,6 +301,35 @@ describe("API keys", () => {
     await waitFor(
       async () => (await prisma.apiKey.findUniqueOrThrow({ where: { id: stored.id } })).lastUsedAt,
     );
+  });
+
+  it("renames a key, rolls it with a 24 h overlap, and deletes it for good", async () => {
+    const dev = await t.signup();
+    const session = (method: "post" | "patch" | "delete" | "get", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const created = await session("post", "/v1/api-keys").send({ name: "worker" });
+    const id = created.body.apiKey.id as string;
+    const oldKey = created.body.key as string;
+
+    const renamed = await session("patch", `/v1/api-keys/${id}`).send({ name: "payments worker" });
+    expect(renamed.body.apiKey).toMatchObject({ id, name: "payments worker" });
+
+    const rolled = await session("post", `/v1/api-keys/${id}/roll`);
+    expect(rolled.status).toBe(201);
+    expect(rolled.body.apiKey).toMatchObject({ name: "payments worker", revokedAt: null });
+    expect(rolled.body.key).not.toBe(oldKey);
+    // Both work during the overlap; the old one carries its end date.
+    expect((await request(t.app).get("/v1/watches").set(bearer(rolled.body.key))).status).toBe(200);
+    expect((await request(t.app).get("/v1/watches").set(bearer(oldKey))).status).toBe(200);
+    const old = await prisma.apiKey.findUniqueOrThrow({ where: { id } });
+    expect(old.revokedAt!.getTime() - Date.now()).toBeGreaterThan(23.9 * 3600 * 1000);
+    await prisma.apiKey.update({ where: { id }, data: { revokedAt: new Date(Date.now() - 1000) } });
+    expect((await request(t.app).get("/v1/watches").set(bearer(oldKey))).status).toBe(401);
+    expect((await session("post", `/v1/api-keys/${id}/roll`)).status).toBe(409); // already ended
+
+    expect((await session("delete", `/v1/api-keys/${id}?permanent=true`)).status).toBe(204);
+    expect(await prisma.apiKey.findUnique({ where: { id } })).toBeNull();
+    expect((await session("delete", `/v1/api-keys/${id}?permanent=true`)).status).toBe(404);
   });
 
   it("is managed by the session only: an API key cannot create or list keys", async () => {
@@ -868,6 +944,24 @@ describe("payments and events", () => {
     ).not.toBeNull();
 
     const id = all.body.data[0].id;
+    // Search by the start of an event ID or a payment ID, and filter by endpoint.
+    const byEvent = await request(t.app)
+      .get(`/v1/events?q=${id.slice(0, 20)}`)
+      .set(bearer(bobKey));
+    expect(byEvent.body.data.map((e: { id: string }) => e.id)).toContain(id);
+    const byPayment = await request(t.app)
+      .get(`/v1/events?q=${all.body.data[0].paymentId}`)
+      .set(bearer(bobKey));
+    expect(byPayment.body.data).toHaveLength(1);
+    const endpointId = all.body.data[0].deliveries[0].endpointId;
+    expect(
+      (await request(t.app).get(`/v1/events?endpointId=${endpointId}`).set(bearer(bobKey))).body
+        .data,
+    ).toHaveLength(7);
+    expect(
+      (await request(t.app).get("/v1/events?endpointId=someone-elses").set(bearer(bobKey))).body
+        .data,
+    ).toHaveLength(0);
     const one = await request(t.app).get(`/v1/events/${id}`).set(bearer(bobKey));
     expect(one.body.event).toMatchObject({
       id,
@@ -967,6 +1061,26 @@ describe("tenant isolation", () => {
     },
   );
 
+  it("renaming or rolling another developer's key is 404", async () => {
+    const as = (method: "patch" | "post", path: string) =>
+      request(t.app)[method](path).set("Cookie", mallory.cookie).set("Origin", ORIGIN);
+    expect((await as("patch", `/v1/api-keys/${ids.apiKey}`).send({ name: "pwned" })).status).toBe(
+      404,
+    );
+    expect((await as("post", `/v1/api-keys/${ids.apiKey}/roll`)).status).toBe(404);
+    expect(
+      (
+        await request(t.app)
+          .delete(`/v1/api-keys/${ids.apiKey}?permanent=true`)
+          .set("Cookie", mallory.cookie)
+          .set("Origin", ORIGIN)
+      ).status,
+    ).toBe(404);
+    expect((await prisma.apiKey.findUniqueOrThrow({ where: { id: ids.apiKey! } })).name).toBe(
+      "test key",
+    );
+  });
+
   it("DELETE /v1/api-keys/:id of another developer's key is 404", async () => {
     const res = await request(t.app)
       .delete(`/v1/api-keys/${ids.apiKey}`)
@@ -989,6 +1103,8 @@ describe("tenant isolation", () => {
           `${method} ${path().replace(ids.endpoint!, "{id}").replace(ids.watch!, "{id}").replace(ids.event!, "{id}").replace(ids.payment!, "{eventId}")}`,
       ),
       "delete /v1/api-keys/{id}",
+      "patch /v1/api-keys/{id}",
+      "post /v1/api-keys/{id}/roll",
       // A wallet on the public ledger is not tenant data: any developer may look any address up.
       "get /v1/accounts/{address}",
     ]);

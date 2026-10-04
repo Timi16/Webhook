@@ -148,6 +148,22 @@ export function createAuthService(
       return { developer: toPublic(developer) };
     },
 
+    async updateProfile(developerId: string, input: { name: string }) {
+      return { developer: toPublic(await repo.setName(developerId, input.name)) };
+    },
+
+    /** Irreversible, so it asks for the password again even with a valid session. */
+    async deleteAccount(developerId: string, password: string): Promise<void> {
+      const developer = await repo.findDeveloper(developerId);
+      if (!developer || !(await verifyPassword(developer.passwordHash, password))) {
+        throw new AppError("VALIDATION_FAILED", "password: incorrect_password", {
+          details: [{ path: "password", issue: "incorrect_password" }],
+        });
+      }
+      await repo.deleteAccount(developerId);
+      options.onSessionsEnded?.(developerId);
+    },
+
     async changePassword(
       developerId: string,
       sessionId: string | undefined,

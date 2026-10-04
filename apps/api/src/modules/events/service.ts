@@ -70,6 +70,8 @@ export function createEventsService(repo: EventsRepo) {
         type?: string | undefined;
         deliveryStatus?: DeliveryStatus | undefined;
         watchId?: string | undefined;
+        endpointId?: string | undefined;
+        q?: string | undefined;
         cursor?: string | undefined;
         limit: number;
       },
