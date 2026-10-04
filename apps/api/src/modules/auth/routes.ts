@@ -1,3 +1,4 @@
+import { emailChangeDetail, profileDetail } from "../audit/details.js";
 import {
   changeEmailSchema,
   changePasswordSchema,
@@ -147,6 +148,7 @@ export function createAuthRouter(
       path: "/auth/me",
       audit: {
         action: "account.profile_updated",
+        detail: profileDetail,
         target: (r) => {
           const d = (r as { developer: { id: string; email: string } }).developer;
           return { id: d.id, label: d.email, developerId: d.id };
@@ -204,7 +206,7 @@ export function createAuthRouter(
     {
       method: "post",
       path: "/auth/email",
-      audit: { action: "account.email_change_requested" },
+      audit: { action: "account.email_change_requested", detail: emailChangeDetail },
       summary: "Request an email change",
       description:
         "Emails a confirmation link, valid for one hour, to the new address. The login email changes only when that link is opened. Needs the current password.",

@@ -1,3 +1,4 @@
+import { apiKeyDetail, apiKeyUpdateDetail } from "../audit/details.js";
 import {
   apiKeyCreatedResponse,
   apiKeyDetailResponse,
@@ -37,6 +38,7 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
       path: "/v1/api-keys",
       audit: {
         action: "api_key.created",
+        detail: apiKeyDetail,
         target: (r) => {
           const k = (r as { apiKey: { id: string; name: string } }).apiKey;
           return { id: k.id, label: k.name };
@@ -75,6 +77,7 @@ export function createApiKeysRouter(api: Api, service: ApiKeysService): Router {
       path: "/v1/api-keys/:id",
       audit: {
         action: "api_key.updated",
+        detail: apiKeyUpdateDetail,
         target: (r) => {
           const k = (r as { apiKey: { id: string; name: string } }).apiKey;
           return { id: k.id, label: k.name };

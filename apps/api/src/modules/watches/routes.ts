@@ -1,3 +1,4 @@
+import { watchCreateDetail, watchUpdateDetail } from "../audit/details.js";
 import {
   createWatchSchema,
   idParamSchema,
@@ -39,6 +40,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       scope: "watches:write",
       audit: {
         action: "watch.created",
+        detail: watchCreateDetail,
         target: (r) => {
           const w = (r as { watch: { id: string; label: string | null; walletAddress: string } })
             .watch;
@@ -79,6 +81,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
       scope: "watches:write",
       audit: {
         action: "watch.updated",
+        detail: watchUpdateDetail,
         target: (r) => {
           const w = (r as { watch: { id: string; label: string | null; walletAddress: string } })
             .watch;

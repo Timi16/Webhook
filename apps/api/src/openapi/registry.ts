@@ -38,6 +38,8 @@ export interface RouteSpec<
     action: string | ((req: Request) => string);
     /** What was changed, read from the handler's result (or the request when it returns nothing). */
     target?: (result: unknown, params: Record<string, unknown>) => AuditTarget;
+    /** What the change did, in a few words, from the validated body. Never built from secrets. */
+    detail?: (body: unknown, result: unknown) => string | undefined;
   };
 }
 
@@ -53,6 +55,7 @@ export interface AuditEntry {
   action: string;
   targetId: string | null;
   targetLabel: string | null;
+  detail: string | null;
   actor: "session" | "api_key";
   apiKeyId: string | null;
   ip: string | null;
@@ -208,8 +211,9 @@ export function createApi(deps: ApiDeps) {
     }
 
     router[spec.method](spec.path, ...chain, async (req, res) => {
+      const body = parse(spec.body, req.body, "body") as Infer<B>;
       const result = await handler({
-        body: parse(spec.body, req.body, "body") as Infer<B>,
+        body,
         query: parse(spec.query, req.query, "query") as Infer<Q>,
         params: parse(spec.params, req.params, "params") as Infer<P>,
         get auth() {
@@ -230,6 +234,7 @@ export function createApi(deps: ApiDeps) {
               typeof spec.audit.action === "string" ? spec.audit.action : spec.audit.action(req),
             targetId: target.id ?? (typeof req.params.id === "string" ? req.params.id : null),
             targetLabel: target.label?.slice(0, 200) ?? null,
+            detail: spec.audit.detail?.(body, result) ?? null,
             actor: req.auth?.via === "apiKey" ? "api_key" : "session",
             apiKeyId: req.auth?.apiKeyId ?? null,
             ip: normalizeIp(req.ip),

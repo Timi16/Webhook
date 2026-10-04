@@ -65,4 +65,10 @@ export const eventIdParamSchema = z.strictObject({ eventId: z.string().min(1).ma
 
 export const addressParamSchema = z.strictObject({ address: walletAddressSchema });
 
-export const auditLogQuerySchema = z.strictObject({ ...paginationQuery });
+export const AUDIT_KINDS = ["account", "api_key", "endpoint", "watch", "event"] as const;
+export const auditLogQuerySchema = z.strictObject({
+  kind: z.enum(AUDIT_KINDS).optional().describe("Only changes to this kind of thing"),
+  actor: z.enum(["session", "api_key"]).optional().describe("Only changes made this way"),
+  logins: z.enum(["true", "false"]).optional().describe("Logins are left out unless this is true"),
+  ...paginationQuery,
+});

@@ -47,7 +47,7 @@ export function createAuditRouter(api: Api, prisma: PrismaClient): Router {
       response: auditLogResponse,
       summary: "List account activity",
       description:
-        "Every change made to the account, newest first: logins, password and email changes, and each API key, endpoint and watch that was created, changed or deleted, with whether the dashboard or an API key did it and from which IP. Secrets are never recorded.",
+        "Every change made to the account, newest first: logins, password and email changes, and each API key, endpoint and watch that was created, changed or deleted, with whether the dashboard or an API key did it and from which IP. Logins are left out unless `logins=true`. Secrets are never recorded.",
       tag: "Auth",
       auth: "session",
       query: auditLogQuerySchema,
@@ -57,6 +57,9 @@ export function createAuditRouter(api: Api, prisma: PrismaClient): Router {
       const rows = await prisma.auditLog.findMany({
         where: {
           developerId: auth.developerId,
+          ...(query.kind ? { action: { startsWith: `${query.kind}.` } } : {}),
+          ...(query.actor ? { actor: query.actor } : {}),
+          ...(query.logins === "true" ? {} : { NOT: { action: "account.logged_in" } }),
           ...(cursor
             ? {
                 OR: [
@@ -77,6 +80,7 @@ export function createAuditRouter(api: Api, prisma: PrismaClient): Router {
           action: row.action,
           targetId: row.targetId,
           targetLabel: row.targetLabel,
+          detail: row.detail,
           actor: row.actor === "api_key" ? ("api_key" as const) : ("session" as const),
           apiKeyId: row.apiKeyId,
           ip: row.ip,

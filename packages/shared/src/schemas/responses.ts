@@ -377,6 +377,7 @@ export const auditLogResponse = z.strictObject({
       action: z.string().describe("For example api_key.created or endpoint.secret_rotated"),
       targetId: z.string().nullable(),
       targetLabel: z.string().nullable().describe("The name, URL or label of what was changed"),
+      detail: z.string().nullable().describe("What the change did, in a few words"),
       actor: z.enum(["session", "api_key"]).describe("The dashboard, or an API key"),
       apiKeyId: z.string().nullable(),
       ip: z.string().nullable(),

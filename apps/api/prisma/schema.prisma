@@ -257,6 +257,7 @@ model AuditLog {
   action      String    // e.g. "api_key.created", "endpoint.secret_rotated"
   targetId    String?
   targetLabel String?   // a name to show: the key's name, the endpoint's URL, the watch's label
+  detail      String?   // what the change did, in a few words: "events: payment.received"
   actor       String    // "session" | "api_key"
   apiKeyId    String?   // which key made the change, when actor is "api_key"
   ip          String?

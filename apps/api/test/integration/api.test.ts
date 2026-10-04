@@ -1634,6 +1634,31 @@ describe("audit log", () => {
       "api_key.created | audited | session",
       `account.created | ${dev.email} | session`,
     ]);
+    // Each row says what the change did, built from the request, never from a secret.
+    const details = Object.fromEntries(
+      (res.body.data as { action: string; detail: string | null }[]).map((r) => [
+        r.action,
+        r.detail,
+      ]),
+    );
+    expect(details).toMatchObject({
+      "api_key.updated": 'renamed to "audited two"',
+      "watch.created": "accepts USDC",
+      "endpoint.secret_rotated": null,
+      "api_key.deleted": null,
+    });
+    const filter = async (query: string) =>
+      ((await session("get", `/v1/audit-log?${query}`)).body.data as { action: string }[]).map(
+        (r) => r.action,
+      );
+    expect(await filter("kind=watch")).toEqual(["watch.deleted", "watch.created"]);
+    expect(await filter("actor=api_key&kind=endpoint")).toEqual([
+      "endpoint.secret_rotated",
+      "endpoint.created",
+    ]);
+    expect(await filter("kind=event")).toEqual([]);
+    expect((await session("get", "/v1/audit-log?kind=nope")).status).toBe(400);
+
     const byKey = rows.find((r) => r.action === "endpoint.created")!;
     expect(byKey).toMatchObject({ apiKeyId: keyId, ip: "203.0.113.9" });
     const text = JSON.stringify(res.body);
@@ -1668,10 +1693,16 @@ describe("audit log", () => {
       .set("Origin", ORIGIN)
       .set("Cookie", cookie)
       .send({ currentPassword: PASSWORD, newPassword: "another long passphrase" });
-    const res = await request(t.app).get("/v1/audit-log").set("Cookie", cookie);
+    const res = await request(t.app).get("/v1/audit-log?logins=true").set("Cookie", cookie);
     expect(res.body.data.map((r: { action: string }) => r.action)).toEqual([
       "account.password_changed",
       "account.logged_in",
+      "account.created",
+    ]);
+    // Logins are noise next to real changes, so they are left out unless asked for.
+    const quiet = await request(t.app).get("/v1/audit-log").set("Cookie", cookie);
+    expect(quiet.body.data.map((r: { action: string }) => r.action)).toEqual([
+      "account.password_changed",
       "account.created",
     ]);
     expect(JSON.stringify(res.body)).not.toContain("another long passphrase");

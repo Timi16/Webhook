@@ -1,3 +1,4 @@
+import { endpointDetail, endpointUpdateDetail, replayDetail } from "../audit/details.js";
 import {
   createEndpointSchema,
   endpointCreatedResponse,
@@ -41,6 +42,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
       scope: "endpoints:write",
       audit: {
         action: "endpoint.created",
+        detail: endpointDetail,
         target: (r) => {
           const e = (r as { endpoint: { id: string; url: string } }).endpoint;
           return { id: e.id, label: e.url };
@@ -80,6 +82,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
       scope: "endpoints:write",
       audit: {
         action: "endpoint.updated",
+        detail: endpointUpdateDetail,
         target: (r) => {
           const e = (r as { endpoint: { id: string; url: string } }).endpoint;
           return { id: e.id, label: e.url };
@@ -175,7 +178,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
       method: "post",
       path: "/v1/endpoints/:id/replay",
       scope: "endpoints:write",
-      audit: { action: "endpoint.replayed" },
+      audit: { action: "endpoint.replayed", detail: replayDetail },
       response: replayResponse,
       summary: "Requeue failed deliveries since a date (max 1,000)",
       description:
