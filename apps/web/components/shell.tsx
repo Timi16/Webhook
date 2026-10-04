@@ -151,7 +151,7 @@ function Nav({ onSearch }: { onSearch: () => void }) {
   return (
     <nav className={open ? "nav app-nav is-open" : "nav app-nav"} aria-label="Main">
       <div className="nav-bar">
-        <Link className="brand" href="/overview" aria-label="Webhook home">
+        <Link className="brand" href="/" aria-label="Webhook home page">
           <Logo />
           <span className="wordmark">webhook</span>
           <span className="net">testnet</span>

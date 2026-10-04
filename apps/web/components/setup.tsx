@@ -37,11 +37,11 @@ export function SetupFrame({
     <>
       <TestnetBanner />
       <header className="wz-top">
-        <span className="brand">
+        <Link className="brand" href="/" aria-label="Webhook home page">
           <Logo />
           <span className="wordmark">webhook</span>
           <span className="net">testnet</span>
-        </span>
+        </Link>
         <span className="where">{step ? `Setup · step ${index + 1} of 4` : "Setup"}</span>
         <Link className="skip" href="/overview">
           {step ? "Skip setup for now" : "Go to dashboard"}

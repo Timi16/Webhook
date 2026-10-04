@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { TestnetBanner } from "./banner";
 import { Logo } from "./icons";
@@ -17,11 +18,11 @@ export function SystemPage({
       <TestnetBanner />
       <div className="sys">
         <div className="sys-card">
-          <span className="brand" style={{ padding: 0 }}>
+          <Link className="brand" href="/" aria-label="Webhook home page" style={{ padding: 0 }}>
             <Logo />
             <span className="wordmark">webhook</span>
             <span className="net">testnet</span>
-          </span>
+          </Link>
           <div className="sys-code">{code}</div>
           <h1 className="display">{title}</h1>
           {children}

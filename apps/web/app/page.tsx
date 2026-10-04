@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Icon, Logo, type IconName } from "@/components/icons";
+import { LandingAccount } from "@/components/landing-account";
 import { LandingMotion } from "@/components/landing-motion";
 import { DOCS_URL } from "@/lib/constants";
 
@@ -88,10 +89,7 @@ export default function LandingPage() {
             <a className="hide-sm" href={DOCS_URL}>
               Docs
             </a>
-            <Link href="/login">Log in</Link>
-            <Link className="lpr-btn sm primary" href="/signup">
-              Start free
-            </Link>
+            <LandingAccount />
           </nav>
         </div>
         <span className="lpr-progress" aria-hidden="true" />

@@ -84,11 +84,11 @@ export default function OnboardingPage() {
       <TestnetBanner />
       <div className="onb">
         <div className="wh-col" style={{ gap: 12 }}>
-          <span className="brand" style={{ padding: 0 }}>
+          <Link className="brand" href="/" aria-label="Webhook home page" style={{ padding: 0 }}>
             <Logo />
             <span className="wordmark">webhook</span>
             <span className="net">testnet</span>
-          </span>
+          </Link>
           <h1 className="display">Get your first webhook in 4 steps</h1>
           <p className="hint">
             About five minutes. Everything runs on Stellar Testnet, so no real money moves.
