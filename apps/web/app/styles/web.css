@@ -31,3 +31,32 @@ body {
   background: transparent;
   box-shadow: inset 0 0 0 2px var(--orange);
 }
+
+/* The testnet banner and the sidebar stay in view while the page scrolls, so the account block is
+   always at the bottom of the window rather than the bottom of the page. On phones the nav is a
+   top bar and scrolls away with the page. */
+@media (min-width: 821px) {
+  .app > .wh-testnet {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  .app .shell > .nav {
+    position: sticky;
+    top: calc(var(--banner-h) + 10px);
+    align-self: flex-start;
+    height: calc(100vh - var(--banner-h) - 20px);
+    overflow-y: auto;
+  }
+  .lpr-dash .app .shell > .nav {
+    position: static;
+    height: auto;
+    align-self: stretch;
+  }
+}
+
+/* Dialogs cover the window, not the page: on a long page that has been scrolled they would
+   otherwise open out of sight at the top. */
+.app .overlay {
+  position: fixed;
+}
