@@ -76,7 +76,7 @@ a test webhook and a first payment. Detail pages take their ID from the query st
 
 ## Docs site
 
-`apps/docs` is a static site: five guides written in MDX and an API reference rendered by Scalar
+`apps/docs` is a static site: six guides written in MDX and an API reference rendered by Scalar
 from `openapi.json`, which is generated from the API's own schemas at build time.
 
 ```sh
@@ -86,6 +86,15 @@ pnpm build:docs                     # static site in apps/docs/out
 
 The verification snippet on the "Verifying signatures" page is extracted and run against the real
 signer by the API's tests, and every response is checked against the schema shown in the reference.
+
+### Setting the real addresses
+
+The docs show `https://api.your-domain.com` until the API has a real address. When it does, run
+this once and commit the result; it updates the quickstart and every code sample in the reference:
+
+```sh
+pnpm --filter @webhook/docs set-urls https://api.example.com https://app.example.com
+```
 
 ### Deploying to Cloudflare Pages
 

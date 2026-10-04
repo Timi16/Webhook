@@ -1,4 +1,4 @@
 {
   "title": "Guides",
-  "pages": ["index", "quickstart", "webhooks", "verifying-signatures", "retries-and-duplicates", "testnet"]
+  "pages": ["index", "quickstart", "authentication", "webhooks", "verifying-signatures", "retries-and-duplicates", "testnet"]
 }

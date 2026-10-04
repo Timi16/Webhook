@@ -1,0 +1,132 @@
+---
+title: Authentication
+description: Create an API key in the dashboard, send it with every request, and limit what it can do.
+---
+
+Your server authenticates with an API key. Keys start with `whk_test_` and are sent in the
+`Authorization` header.
+
+## Get a key from the dashboard
+
+1. Log in to the dashboard and open **API keys**.
+2. Click **Create key** and give it a name that says where it will live, such as "Payments worker".
+3. Choose what it may do and when it expires (see below), then **Create key**.
+4. Copy the key. It is shown once; only a hash of it is stored, so it cannot be shown again.
+
+Keep the key in your server's environment. Never put it in browser code, a mobile app or a
+repository.
+
+<Callout type="warn">
+  Lost a key? Roll it (see [Rolling a key](#rolling-a-key)). Leaked a key? Revoke it: it stops
+  working immediately.
+</Callout>
+
+## Send it with every request
+
+<Tabs groupId="server-language" persist items={['curl', 'Node.js', 'Python']}>
+<Tab value="curl">
+
+```bash
+curl "$API/v1/payments?limit=10" \
+  -H "Authorization: Bearer $KEY"
+```
+
+</Tab>
+<Tab value="Node.js">
+
+```js
+const res = await fetch(`${process.env.API}/v1/payments?limit=10`, {
+  headers: { Authorization: `Bearer ${process.env.KEY}` },
+});
+if (!res.ok) throw new Error(`${res.status} ${(await res.json()).error.code}`);
+const { data } = await res.json();
+```
+
+</Tab>
+<Tab value="Python">
+
+```python
+import os, requests
+
+res = requests.get(
+    f"{os.environ['API']}/v1/payments",
+    params={"limit": 10},
+    headers={"Authorization": f"Bearer {os.environ['KEY']}"},
+)
+res.raise_for_status()
+data = res.json()["data"]
+```
+
+</Tab>
+</Tabs>
+
+## Permissions
+
+Give each key only what its job needs. A new key made in the dashboard starts with `payments:read`
+alone; a key made through the API without `scopes` gets all three.
+
+| Permission | Lets the key |
+| --- | --- |
+| `payments:read` | Read payments, webhook events and the overview numbers. |
+| `watches:write` | Create, edit, pause, resume and delete watches. |
+| `endpoints:write` | Add, edit and delete endpoints, rotate signing secrets, send test webhooks, and resend or replay events. |
+
+Every key can list your watches and endpoints, whatever its permissions.
+
+Changing a key's permissions in the dashboard applies to its next request. The key itself does not
+change, so nothing needs redeploying.
+
+## Limit a key to your servers
+
+**Allowed IPs.** On the key's page, add the IPv4 addresses or CIDR ranges your servers call from,
+for example `203.0.113.7` or `203.0.113.0/24`. Requests from anywhere else are refused. Leave the
+list empty to allow any address.
+
+**Expiry.** A key can expire after 30 days, 90 days or a year, or never. An expired key behaves
+like a revoked one.
+
+## Rolling a key
+
+Rolling gives you a new key with the same name, permissions and IP rules. The old key keeps working
+for 24 hours, so you can deploy the new one without downtime:
+
+1. On the key's page, click **Roll** and copy the new key.
+2. Deploy it to your servers.
+3. After 24 hours the old key stops working by itself.
+
+## When a request is refused
+
+| Status | `error.code` | What it means |
+| --- | --- | --- |
+| `401` | `UNAUTHENTICATED` | No key was sent, or it is wrong, revoked or expired. |
+| `403` | `FORBIDDEN` | The key is valid but lacks the permission for this request, or the request came from an IP the key does not allow. The message says which. |
+| `429` | `RATE_LIMITED` | More than 300 requests in a minute. Wait for the number of seconds in `Retry-After`. |
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "This API key lacks the watches:write permission",
+    "requestId": "01K6V8Z3M4T7Q2X9B5N1R0C8YD"
+  }
+}
+```
+
+## See what a key has been doing
+
+Each key's page in the dashboard shows its last 24 hours of use and its most recent requests:
+method, path, status and the IP it came from, including the ones that were refused. The log is
+kept for 7 days and never stores query strings.
+
+Changes to the account itself (keys created or revoked, secrets rotated, watches deleted) are
+recorded in the **audit log** under **Settings**, with whether the dashboard or an API key made
+them.
+
+## What a key cannot do
+
+API keys cannot create, change or revoke API keys, read the audit log, or change account settings.
+Those need you to be logged in to the dashboard, so a leaked key cannot give itself more access.
+
+The dashboard uses a session cookie rather than a key. If you call those endpoints yourself, every
+state-changing request must send an `Origin` header equal to the dashboard's address; the
+[quickstart](/docs/quickstart) shows this for signup and key creation.

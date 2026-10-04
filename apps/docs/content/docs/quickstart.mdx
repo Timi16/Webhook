@@ -14,7 +14,11 @@ export DASHBOARD=https://your-dashboard.com    # the origin the API trusts for b
 
 ## 1. Create an account and an API key
 
-Accounts are session based, so these two calls keep a cookie. Every later call uses the API key.
+The quickest way is the dashboard: sign up, open **API keys**, click **Create key** and copy the key
+it shows you. [Authentication](/docs/authentication) explains permissions, expiry and IP limits.
+
+To do it from the terminal instead: accounts are session based, so these two calls keep a cookie.
+Every later call uses the API key.
 
 ```bash
 curl -c cookies.txt -X POST $API/auth/signup \

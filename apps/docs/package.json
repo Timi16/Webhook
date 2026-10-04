@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "openapi": "pnpm --filter @webhook/api openapi ../docs/public/openapi.json && node scripts/client-examples.mjs",
+    "openapi": "node scripts/openapi.mjs",
+    "set-urls": "node scripts/set-urls.mjs",
     "predev": "pnpm openapi",
     "dev": "next dev --port 3100",
     "prebuild": "pnpm openapi",
