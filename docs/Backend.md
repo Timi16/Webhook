@@ -379,8 +379,14 @@ POST /auth/password
 currentPassword, newPassword
 204, all other sessions deleted
 PATCH /auth/me
-name
+name?, workspace? (null clears it)
 200 { developer }
+POST /auth/email
+email, password
+204, emails a 1-hour confirmation link to the new address; nothing changes until it is opened
+POST /auth/email/confirm
+token
+200 { developer }, the new address is now the login
 DELETE /auth/me
 password
 204, deletes the account with its watches, endpoints, API keys and history; cookie cleared
@@ -398,11 +404,14 @@ GET /v1/api-keys
 —
 { data: ApiKey[] } (prefix, name, dates; never the key)
 POST /v1/api-keys
-name
+name, note?, scopes?, allowedIps?, expiresAt?
 201 { apiKey, key: "whk_test_…" }, full key shown only here
+GET /v1/api-keys/:id
+—
+{ apiKey, usage (last 24 h, hourly), recentRequests (20) }
 PATCH /v1/api-keys/:id
-name
-200 { apiKey }
+name?, note?, scopes?, allowedIps?, expiresAt?
+200 { apiKey }, applies to the key's next request
 POST /v1/api-keys/:id/roll
 —
 201 { apiKey, key }, a new key; the old one keeps working for 24 hours
@@ -757,6 +766,10 @@ Decisions made while building, where the spec was silent or needed a correction.
 • Webhook payload: { id, type, apiVersion, createdAt, data }. For payment events data holds payment (id, txHash, ledger, ledgerClosedAt, from, to, toMuxedId, memo, memoType, asset, amount, amountStroops), watch (id, label, walletAddress) and verification (outcome, reasons). Field names are camelCase, like the REST API.
 • Resuming a paused watch sets startLedger to the next ledger, so payments that arrived while it was paused stay ignored (otherwise reconciliation would match them after the resume).
 • Password reset tokens are stateless: an HMAC (SESSION_SECRET) over the developer ID, expiry and current password hash. They die as soon as the password changes.
+• API key limits (added 4 Oct 2026). A key has scopes (payments:read, watches:write, endpoints:write; all three by default), an optional list of allowed IPv4 addresses or CIDR ranges, and an optional expiresAt. payments:read covers payments, events and the overview; watches:write covers creating, editing, pausing and deleting watches; endpoints:write covers every endpoint change plus event resend and replay. Listing watches and endpoints needs no scope. A missing scope or a blocked IP answers 403 FORBIDDEN; an expired key answers 401 like a revoked one. Sessions are never limited by scopes.
+• API key request log. Every request made with a key is written to ApiKeyRequest (method, path without the query string, status, duration, IP) when the response is sent, including requests refused for scope or IP. Rows are pruned after 7 days and deleted with the key. Query strings are never stored because they are developer input and may hold a pasted secret.
+• Endpoint event types. Endpoint.eventTypes (default both payment events) is checked together with Watch.eventTypes: an event is created only when the watch and its endpoint both want it. test.ping and system.network_reset are always sent.
+• Workspace and email change. Developer.workspace is a display name only. An email change is confirmed from the new address with a stateless signed token (same construction as the password reset token); the token covers the current email, so it stops working once the email changes.
 • The 5/min auth rate limit applies to the POST /auth routes that take credentials, not to GET /auth/me or logout.
 • Session cookies are Secure only when NODE_ENV=production, so the dashboard works over http://localhost in development.
 • The same transaction reaching us from RPC and from the Horizon backfill (different event IDs) is recorded once: the matcher skips a payment whose transaction hash already exists from the other source.

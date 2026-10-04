@@ -17,6 +17,7 @@ export function createPaymentsRouter(api: Api, service: PaymentsService): Router
     {
       method: "get",
       path: "/v1/payments",
+      scope: "payments:read",
       response: paymentListResponse,
       summary: "List detected payments",
       description:
@@ -32,6 +33,7 @@ export function createPaymentsRouter(api: Api, service: PaymentsService): Router
     {
       method: "get",
       path: "/v1/payments/:eventId",
+      scope: "payments:read",
       response: paymentDetailResponse,
       summary: "Get a payment with rule-by-rule results",
       description:

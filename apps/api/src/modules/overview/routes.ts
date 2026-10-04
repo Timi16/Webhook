@@ -11,6 +11,7 @@ export function createOverviewRouter(api: Api, service: OverviewService): Router
     {
       method: "get",
       path: "/v1/overview",
+      scope: "payments:read",
       summary: "Last 24 hours at a glance",
       description:
         "Counts for the last 24 hours: payments evaluated and their outcomes, webhook deliveries by state with the median and 95th-percentile duration of successful attempts, watches by state, and payments per hour for a chart.",

@@ -46,7 +46,15 @@ export async function createMatch(
   });
 
   const type = result.outcome === "VERIFIED" ? "payment.received" : "payment.rejected";
-  const emits = watch.eventTypes.includes(type);
+  // Both the watch and its endpoint must want this kind of event. A watch whose endpoint is
+  // missing is broken data: that throws, so the batch rolls back instead of dropping the event.
+  const endpoint = watch.eventTypes.includes(type)
+    ? await tx.endpoint.findUniqueOrThrow({
+        where: { id: watch.endpointId },
+        select: { eventTypes: true },
+      })
+    : null;
+  const emits = endpoint?.eventTypes.includes(type) ?? false;
   if (emits) {
     const eventId = newEventId();
     await tx.webhookEvent.create({

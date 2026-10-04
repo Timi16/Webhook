@@ -5,10 +5,17 @@ export function createAuthRepo(prisma: PrismaClient) {
     findDeveloperByEmail: (email: string) => prisma.developer.findUnique({ where: { email } }),
     findDeveloper: (developerId: string) =>
       prisma.developer.findUnique({ where: { id: developerId } }),
-    createDeveloper: (data: { email: string; passwordHash: string; name?: string }) =>
+    createDeveloper: (data: {
+      email: string;
+      passwordHash: string;
+      name?: string;
+      workspace?: string;
+    }) =>
       prisma.developer.create({ data }),
-    setName: (developerId: string, name: string) =>
-      prisma.developer.update({ where: { id: developerId }, data: { name } }),
+    updateProfile: (developerId: string, data: { name?: string; workspace?: string | null }) =>
+      prisma.developer.update({ where: { id: developerId }, data }),
+    setEmail: (developerId: string, email: string) =>
+      prisma.developer.update({ where: { id: developerId }, data: { email } }),
 
     /**
      * Removes the developer and everything they own. Done in dependency order: several relations

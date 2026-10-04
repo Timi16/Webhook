@@ -21,6 +21,7 @@ export function serializeEndpoint(e: Endpoint) {
     status: e.status,
     consecutiveFailures: e.consecutiveFailures,
     disabledReason: e.disabledReason,
+    eventTypes: e.eventTypes,
     previousSecretValidUntil: rotating ? (e.prevSecretUntil?.toISOString() ?? null) : null,
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
@@ -74,7 +75,11 @@ export function createEndpointsService(
     /** The secret is returned only here; it is stored encrypted. */
     async create(
       developerId: string,
-      input: { url: string; description?: string | null | undefined },
+      input: {
+        url: string;
+        description?: string | null | undefined;
+        eventTypes?: string[] | undefined;
+      },
     ) {
       const maxEndpoints = options.maxEndpoints ?? 20;
       if ((await repo.count(developerId)) >= maxEndpoints) {
@@ -88,6 +93,7 @@ export function createEndpointsService(
       const endpoint = await repo.create(developerId, {
         url,
         description: input.description ?? null,
+        ...(input.eventTypes ? { eventTypes: input.eventTypes } : {}),
         secretEnc: encryptSecret(secret, env.ENCRYPTION_KEY),
       });
       return { endpoint: serializeEndpoint(endpoint), secret };
@@ -118,12 +124,17 @@ export function createEndpointsService(
     async update(
       developerId: string,
       id: string,
-      input: { url?: string | undefined; description?: string | null | undefined },
+      input: {
+        url?: string | undefined;
+        description?: string | null | undefined;
+        eventTypes?: string[] | undefined;
+      },
     ) {
       await mustFind(developerId, id);
       const endpoint = await repo.update(developerId, id, {
         ...(input.url !== undefined ? { url: await checkUrl(input.url) } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.eventTypes !== undefined ? { eventTypes: input.eventTypes } : {}),
       });
       if (!endpoint) throw notFound();
       return { endpoint: serializeEndpoint(endpoint) };

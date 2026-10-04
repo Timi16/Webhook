@@ -36,6 +36,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
     {
       method: "post",
       path: "/v1/watches",
+      scope: "watches:write",
       response: watchWithWarningsResponse,
       summary: "Watch a wallet",
       description:
@@ -67,6 +68,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
     {
       method: "patch",
       path: "/v1/watches/:id",
+      scope: "watches:write",
       response: watchWithWarningsResponse,
       summary: "Update a watch (applies from the next ledger)",
       description: "Changes any rule except the wallet address. Applies from the next ledger.",
@@ -82,6 +84,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
     {
       method: "post",
       path: "/v1/watches/:id/pause",
+      scope: "watches:write",
       response: watchEnvelope,
       summary: "Pause a watch",
       description: "Stops matching new payments. Deliveries already queued continue.",
@@ -96,6 +99,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
     {
       method: "post",
       path: "/v1/watches/:id/resume",
+      scope: "watches:write",
       response: watchEnvelope,
       summary: "Resume a watch",
       description:
@@ -111,6 +115,7 @@ export function createWatchesRouter(api: Api, service: WatchesService): Router {
     {
       method: "delete",
       path: "/v1/watches/:id",
+      scope: "watches:write",
       summary: "Delete a watch (history kept)",
       description: "Stops the watch for good. Its payments and events remain available.",
       tag,

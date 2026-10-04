@@ -38,6 +38,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints",
+      scope: "endpoints:write",
       response: endpointCreatedResponse,
       summary: "Create an endpoint (secret shown once)",
       description:
@@ -69,6 +70,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "patch",
       path: "/v1/endpoints/:id",
+      scope: "endpoints:write",
       response: endpointEnvelope,
       summary: "Update an endpoint",
       description:
@@ -85,6 +87,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "delete",
       path: "/v1/endpoints/:id",
+      scope: "endpoints:write",
       summary: "Delete an endpoint",
       description:
         "Deletes the endpoint and cancels its unfinished deliveries. Refused with `409` while an active watch uses it.",
@@ -100,6 +103,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/rotate-secret",
+      scope: "endpoints:write",
       response: rotatedSecretResponse,
       summary: "Rotate the signing secret (old one valid 24 h)",
       description:
@@ -115,6 +119,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/test",
+      scope: "endpoints:write",
       response: testWebhookResponse,
       summary: "Send a test.ping and return the first attempt",
       description:
@@ -130,6 +135,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/enable",
+      scope: "endpoints:write",
       response: endpointEnvelope,
       summary: "Re-enable a disabled endpoint",
       description:
@@ -145,6 +151,7 @@ export function createEndpointsRouter(api: Api, service: EndpointsService): Rout
     {
       method: "post",
       path: "/v1/endpoints/:id/replay",
+      scope: "endpoints:write",
       response: replayResponse,
       summary: "Requeue failed deliveries since a date (max 1,000)",
       description:

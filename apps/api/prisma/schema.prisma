@@ -12,6 +12,7 @@ model Developer {
   email        String     @unique
   passwordHash String
   name         String?
+  workspace    String?    // display name for the account, e.g. a company
   createdAt    DateTime   @default(now())
   sessions     Session[]
   apiKeys      ApiKey[]
@@ -39,11 +40,33 @@ model ApiKey {
   name        String
   prefix      String    // e.g. "whk_test_9f2a" shown in the UI
   keyHash     String    @unique // sha256 of the full key
+  note        String?
+  scopes      String[]  @default(["payments:read", "watches:write", "endpoints:write"])
+  allowedIps  String[]  @default([]) // IPv4 addresses or CIDR ranges; empty = any IP
+  expiresAt   DateTime?
   lastUsedAt  DateTime?
+  lastUsedIp  String?
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
+  requests    ApiKeyRequest[]
 
   @@index([developerId])
+}
+
+/// One row per request made with an API key. Kept for 7 days. The path is stored without its
+/// query string, which is developer input and could hold a pasted secret.
+model ApiKeyRequest {
+  id         String   @id @default(cuid())
+  apiKeyId   String
+  apiKey     ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  method     String
+  path       String
+  status     Int
+  durationMs Int
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
 }
 
 enum EndpointStatus {
@@ -64,6 +87,7 @@ model Endpoint {
   status              EndpointStatus @default(ACTIVE)
   consecutiveFailures Int            @default(0) // failed EVENTS in a row, not attempts
   disabledReason      String?
+  eventTypes          String[]       @default(["payment.received", "payment.rejected"]) // payment events this endpoint accepts
   deletedAt           DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt

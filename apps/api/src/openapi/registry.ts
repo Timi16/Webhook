@@ -1,5 +1,5 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
-import { SECRET_KEY_ISSUE, errorResponseSchema } from "@webhook/shared";
+import { SECRET_KEY_ISSUE, errorResponseSchema, type ApiKeyScope } from "@webhook/shared";
 import type { Request, RequestHandler, Response, Router } from "express";
 import type { z } from "zod";
 import { AppError } from "../lib/errors.js";
@@ -20,6 +20,8 @@ export interface RouteSpec<
   description?: string;
   tag: string;
   auth: AuthMode;
+  /** The permission an API key needs for this route. Sessions are never limited by it. */
+  scope?: ApiKeyScope;
   /** Success status; 204 sends no body. Default 200. */
   status?: number;
   body?: B;
@@ -116,7 +118,16 @@ export function createApi(deps: ApiDeps) {
       method: spec.method,
       path: spec.path.replace(/:(\w+)/g, "{$1}"),
       summary: spec.summary,
-      ...(spec.description ? { description: spec.description } : {}),
+      ...(spec.description || spec.scope
+        ? {
+            description: [
+              spec.description,
+              spec.scope ? `API keys need the \`${spec.scope}\` permission.` : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          }
+        : {}),
       tags: [spec.tag],
       security:
         spec.auth === "none"
@@ -138,6 +149,14 @@ export function createApi(deps: ApiDeps) {
         ...(spec.auth === "none"
           ? {}
           : { 401: { description: "Unauthenticated", content: errorContent } }),
+        ...(spec.auth === "any"
+          ? {
+              403: {
+                description: "The API key lacks the permission or is used from a blocked IP",
+                content: errorContent,
+              },
+            }
+          : {}),
         429: { description: "Rate limited", content: errorContent },
       },
     });
@@ -150,6 +169,15 @@ export function createApi(deps: ApiDeps) {
         deps.requireOrigin,
         deps.apiLimit,
       );
+      const scope = spec.scope;
+      if (scope) {
+        chain.push((req, _res, next) => {
+          if (req.auth?.via === "apiKey" && !req.auth.scopes?.includes(scope)) {
+            throw new AppError("FORBIDDEN", `This API key lacks the ${scope} permission`);
+          }
+          next();
+        });
+      }
     }
 
     router[spec.method](spec.path, ...chain, async (req, res) => {
@@ -230,6 +258,7 @@ returned in the \`X-Request-Id\` header.
 - \`INSECURE_URL\` (400): Endpoint URL is not HTTPS, has credentials or uses another port than 443 or 8443.
 - \`SSRF_BLOCKED\` (400): Endpoint URL resolves to a private or internal address.
 - \`UNAUTHENTICATED\` (401): Missing, invalid or revoked credentials.
+- \`FORBIDDEN\` (403): The API key lacks the permission for this request, or is used from an IP address it does not allow.
 - \`FORBIDDEN_ORIGIN\` (403): Cookie request without the expected \`Origin\` header.
 - \`NOT_FOUND\` (404): The resource does not exist or belongs to someone else.
 - \`CONFLICT\` (409): For example an email already in use, or a limit reached.
@@ -266,12 +295,12 @@ const TAGS = [
   {
     name: "API keys",
     description:
-      "Keys your servers use to call the API (`Authorization: Bearer whk_test_...`). The full key is shown once when created; only a hash is stored. These endpoints need a session, so a leaked key cannot mint more keys. Up to 20 active keys per developer.",
+      "Keys your servers use to call the API (`Authorization: Bearer whk_test_...`). The full key is shown once when created; only a hash is stored. These endpoints need a session, so a leaked key cannot mint more keys. A key can be limited to permissions (`payments:read`, `watches:write`, `endpoints:write`), to IP addresses and to an expiry date; listing watches and endpoints needs no permission. Every request made with a key is logged for 7 days. Up to 20 active keys per developer.",
   },
   {
     name: "Endpoints",
     description:
-      "URLs on your server that receive webhooks. Each has its own signing secret, shown once on creation. An endpoint is `ACTIVE`, `FAILING` (recent attempts failed) or `DISABLED` (it answered `410`, or 20 events in a row could not be delivered). URLs must be HTTPS on port 443 or 8443 and resolve to a public address. Up to 20 per developer.",
+      "URLs on your server that receive webhooks. Each has its own signing secret, shown once on creation. An endpoint chooses which payment events it accepts (`eventTypes`); a watch's own choice applies on top. An endpoint is `ACTIVE`, `FAILING` (recent attempts failed) or `DISABLED` (it answered `410`, or 20 events in a row could not be delivered). URLs must be HTTPS on port 443 or 8443 and resolve to a public address. Up to 20 per developer.",
   },
   {
     name: "Watches",

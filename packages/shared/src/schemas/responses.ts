@@ -15,6 +15,7 @@ export const developerResponse = z.strictObject({
   id: z.string(),
   email: z.string(),
   name: z.string().nullable(),
+  workspace: z.string().nullable(),
   createdAt: timestamp,
 });
 export const developerEnvelope = z.strictObject({ developer: developerResponse });
@@ -23,11 +24,42 @@ export const apiKeyResponse = z.strictObject({
   id: z.string(),
   name: z.string(),
   prefix: z.string().describe("First characters of the key, e.g. whk_test_9f2a"),
+  note: z.string().nullable(),
+  scopes: z.array(z.string()).describe("payments:read, watches:write, endpoints:write"),
+  allowedIps: z.array(z.string()).describe("IPv4 addresses or CIDR ranges; empty = any IP"),
+  expiresAt: timestamp.nullable().describe("The key stops working at this time; null = never"),
   lastUsedAt: timestamp.nullable(),
+  lastUsedIp: z.string().nullable(),
   revokedAt: timestamp.nullable(),
   createdAt: timestamp,
 });
 export const apiKeyEnvelope = z.strictObject({ apiKey: apiKeyResponse });
+export const apiKeyDetailResponse = z.strictObject({
+  apiKey: apiKeyResponse,
+  usage: z.strictObject({
+    requests: z.number().int().describe("Requests in the last 24 hours"),
+    errors: z.number().int().describe("Of those, how many answered 4xx or 5xx"),
+    medianMs: z.number().int().nullable(),
+    hourly: z
+      .array(
+        z.strictObject({ hour: timestamp, requests: z.number().int(), errors: z.number().int() }),
+      )
+      .describe("One entry per hour, oldest first, 24 entries"),
+  }),
+  recentRequests: z
+    .array(
+      z.strictObject({
+        id: z.string(),
+        at: timestamp,
+        method: z.string(),
+        path: z.string().describe("Without the query string"),
+        status: z.number().int(),
+        durationMs: z.number().int(),
+        ip: z.string().nullable(),
+      }),
+    )
+    .describe("The 20 most recent requests; the log is kept for 7 days"),
+});
 export const apiKeyListResponse = z.strictObject({ data: z.array(apiKeyResponse) });
 export const apiKeyCreatedResponse = z.strictObject({
   apiKey: apiKeyResponse,
@@ -41,6 +73,7 @@ export const endpointResponse = z.strictObject({
   status: z.enum(["ACTIVE", "FAILING", "DISABLED"]),
   consecutiveFailures: z.number().int().describe("Failed events in a row, not attempts"),
   disabledReason: z.string().nullable(),
+  eventTypes: z.array(z.string()).describe("Payment events this endpoint accepts"),
   previousSecretValidUntil: timestamp
     .nullable()
     .describe("Set while a rotated secret is still accepted"),

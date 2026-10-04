@@ -20,7 +20,7 @@ export function createEndpointsRepo(prisma: PrismaClient) {
 
     create: (
       developerId: string,
-      data: { url: string; description: string | null; secretEnc: string },
+      data: { url: string; description: string | null; secretEnc: string; eventTypes?: string[] },
     ) => prisma.endpoint.create({ data: { developerId, ...data } }),
 
     async update(developerId: string, id: string, data: Prisma.EndpointUpdateManyMutationInput) {

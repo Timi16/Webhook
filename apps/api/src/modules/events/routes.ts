@@ -18,6 +18,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
     {
       method: "get",
       path: "/v1/events",
+      scope: "payments:read",
       response: eventListResponse,
       summary: "List webhook events",
       description:
@@ -33,6 +34,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
     {
       method: "get",
       path: "/v1/events/:id",
+      scope: "payments:read",
       response: eventDetailResponse,
       summary: "Get an event with its payload, deliveries and attempts",
       description: "One event with the exact payload that was sent and every delivery attempt.",
@@ -47,6 +49,7 @@ export function createEventsRouter(api: Api, service: EventsService): Router {
     {
       method: "post",
       path: "/v1/events/:id/resend",
+      scope: "endpoints:write",
       response: deliveryEnvelope,
       summary: "Resend an event (same Webhook-Id)",
       description:

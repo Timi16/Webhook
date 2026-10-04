@@ -190,6 +190,67 @@ describe("auth", () => {
     expect((await request(t.app).get("/auth/me").set("Cookie", otherCookie)).status).toBe(401);
   });
 
+  it("sets a workspace name at signup or later, and clears it", async () => {
+    const res = await request(t.app)
+      .post("/auth/signup")
+      .set("Origin", ORIGIN)
+      .send({ email: `ws-${Date.now()}@example.com`, password: PASSWORD, workspace: "Shopkit" });
+    expect(res.body.developer.workspace).toBe("Shopkit");
+    const cookie = (res.headers["set-cookie"] as unknown as string[])[0]!.split(";")[0]!;
+    const patch = (body: Record<string, unknown>) =>
+      request(t.app).patch("/auth/me").set("Origin", ORIGIN).set("Cookie", cookie).send(body);
+    expect((await patch({ workspace: "Shopkit NG" })).body.developer).toMatchObject({
+      workspace: "Shopkit NG",
+      name: null,
+    });
+    expect((await patch({ workspace: null })).body.developer.workspace).toBeNull();
+    expect((await patch({})).status).toBe(400);
+  });
+
+  it("changes the login email only after the link sent to the new address is opened", async () => {
+    const dev = await t.signup();
+    const other = await t.signup();
+    const newEmail = `moved-${Date.now()}@example.com`;
+    const ask = (email: string, password = PASSWORD) =>
+      request(t.app)
+        .post("/auth/email")
+        .set("Origin", ORIGIN)
+        .set("Cookie", dev.cookie)
+        .send({ email, password });
+
+    const wrong = await ask(newEmail, "not the password");
+    expect(wrong.body.error.details).toEqual([{ path: "password", issue: "incorrect_password" }]);
+    expect((await ask(other.email)).status).toBe(409);
+    expect((await ask(dev.email)).body.error.details).toEqual([
+      { path: "email", issue: "same_email" },
+    ]);
+
+    const before = t.mails.length;
+    expect((await ask(newEmail.toUpperCase())).status).toBe(204);
+    expect(t.mails).toHaveLength(before + 1);
+    expect(t.mails.at(-1)!.to).toBe(newEmail);
+    // Nothing changes until the link is opened.
+    expect((await request(t.app).get("/auth/me").set("Cookie", dev.cookie)).body.developer.email).toBe(
+      dev.email,
+    );
+
+    const token = /token=([\w.-]+)/.exec(t.mails.at(-1)!.text)![1]!;
+    const confirm = (value: string) =>
+      request(t.app).post("/auth/email/confirm").set("Origin", ORIGIN).send({ token: value });
+    expect((await confirm(`${token}00`)).status).toBe(400);
+    expect((await confirm("garbage")).status).toBe(400);
+    const confirmed = await confirm(token);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.developer.email).toBe(newEmail);
+    // The link works once: its signature covered the old address.
+    expect((await confirm(token)).status).toBe(400);
+
+    const login = (email: string) =>
+      request(t.app).post("/auth/login").set("Origin", ORIGIN).send({ email, password: PASSWORD });
+    expect((await login(newEmail)).status).toBe(200);
+    expect((await login(dev.email)).status).toBe(401);
+  });
+
   it("forgot always returns 204; the emailed token resets the password once", async () => {
     const dev = await t.signup();
     const forgot = (email: string) =>
@@ -301,6 +362,170 @@ describe("API keys", () => {
     await waitFor(
       async () => (await prisma.apiKey.findUniqueOrThrow({ where: { id: stored.id } })).lastUsedAt,
     );
+  });
+
+  it("limits a key to its permissions; reading watches and endpoints needs none", async () => {
+    const dev = await t.signup();
+    const session = (method: "post" | "patch", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const make = async (scopes: string[]) =>
+      (await session("post", "/v1/api-keys").send({ name: scopes.join(), scopes })).body as {
+        apiKey: { id: string; scopes: string[] };
+        key: string;
+      };
+    const reader = await make(["payments:read"]);
+    expect(reader.apiKey.scopes).toEqual(["payments:read"]);
+    const call = (key: string, method: "get" | "post" | "delete", path: string) =>
+      request(t.app)[method](path).set(bearer(key));
+
+    expect((await call(reader.key, "get", "/v1/payments")).status).toBe(200);
+    expect((await call(reader.key, "get", "/v1/events")).status).toBe(200);
+    expect((await call(reader.key, "get", "/v1/overview")).status).toBe(200);
+    expect((await call(reader.key, "get", "/v1/watches")).status).toBe(200);
+    expect((await call(reader.key, "get", "/v1/endpoints")).status).toBe(200);
+    const denied = await call(reader.key, "post", "/v1/endpoints").send({
+      url: "https://scopes.example.com/hook",
+    });
+    expect(denied.status).toBe(403);
+    expect(denied.body.error).toMatchObject({ code: "FORBIDDEN" });
+    expect(denied.body.error.message).toContain("endpoints:write");
+
+    const writer = await make(["endpoints:write", "watches:write"]);
+    const endpoint = await call(writer.key, "post", "/v1/endpoints").send({
+      url: "https://scopes.example.com/hook",
+    });
+    expect(endpoint.status).toBe(201);
+    const watch = await call(writer.key, "post", "/v1/watches").send({
+      walletAddress: randomAddress(),
+      endpointId: endpoint.body.endpoint.id,
+      assets: [USDC],
+    });
+    expect(watch.status).toBe(201);
+    expect((await call(writer.key, "get", "/v1/payments")).status).toBe(403);
+    expect((await call(reader.key, "delete", `/v1/watches/${watch.body.watch.id}`)).status).toBe(
+      403,
+    );
+
+    // A change applies to the key's next request.
+    const widened = await session("patch", `/v1/api-keys/${reader.apiKey.id}`).send({
+      scopes: ["payments:read", "watches:write"],
+    });
+    expect(widened.body.apiKey.scopes).toEqual(["payments:read", "watches:write"]);
+    expect((await call(reader.key, "delete", `/v1/watches/${watch.body.watch.id}`)).status).toBe(
+      204,
+    );
+
+    for (const body of [{ scopes: [] }, { scopes: ["admin"] }, {}]) {
+      expect((await session("patch", `/v1/api-keys/${reader.apiKey.id}`).send(body)).status).toBe(
+        400,
+      );
+    }
+  });
+
+  it("only lets a key in from its allowed IPs", async () => {
+    const dev = await t.signup();
+    const session = (method: "post" | "patch", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const created = await session("post", "/v1/api-keys").send({
+      name: "office only",
+      allowedIps: ["203.0.113.0/24", "198.51.100.7"],
+    });
+    expect(created.status).toBe(201);
+    const key = created.body.key as string;
+    const from = (ip: string) =>
+      request(t.app).get("/v1/watches").set(bearer(key)).set("X-Forwarded-For", ip);
+
+    expect((await from("203.0.113.40")).status).toBe(200);
+    expect((await from("198.51.100.7")).status).toBe(200);
+    const blocked = await from("198.51.100.8");
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe("FORBIDDEN");
+    expect((await request(t.app).get("/v1/watches").set(bearer(key))).status).toBe(403);
+
+    const bad = await session("patch", `/v1/api-keys/${created.body.apiKey.id}`).send({
+      allowedIps: ["not-an-ip"],
+    });
+    expect(bad.status).toBe(400);
+    const opened = await session("patch", `/v1/api-keys/${created.body.apiKey.id}`).send({
+      allowedIps: [],
+    });
+    expect(opened.body.apiKey.allowedIps).toEqual([]);
+    expect((await from("198.51.100.8")).status).toBe(200);
+  });
+
+  it("stops a key at its expiry date and refuses an expiry in the past", async () => {
+    const dev = await t.signup();
+    const session = (method: "post" | "patch", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const past = await session("post", "/v1/api-keys").send({
+      name: "late",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    expect(past.status).toBe(400);
+    expect(past.body.error.details).toEqual([{ path: "expiresAt", issue: "must_be_in_the_future" }]);
+
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    const created = await session("post", "/v1/api-keys").send({ name: "temporary", expiresAt });
+    expect(created.body.apiKey.expiresAt).toBe(expiresAt);
+    const key = created.body.key as string;
+    const id = created.body.apiKey.id as string;
+    expect((await request(t.app).get("/v1/watches").set(bearer(key))).status).toBe(200);
+
+    await prisma.apiKey.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect((await request(t.app).get("/v1/watches").set(bearer(key))).status).toBe(401);
+    expect((await session("post", `/v1/api-keys/${id}/roll`)).status).toBe(409);
+
+    const cleared = await session("patch", `/v1/api-keys/${id}`).send({ expiresAt: null });
+    expect(cleared.body.apiKey.expiresAt).toBeNull();
+    expect((await request(t.app).get("/v1/watches").set(bearer(key))).status).toBe(200);
+  });
+
+  it("logs each request made with a key, without its query string, and reports usage", async () => {
+    const dev = await t.signup();
+    const session = (method: "post" | "get", path: string) =>
+      request(t.app)[method](path).set("Cookie", dev.cookie).set("Origin", ORIGIN);
+    const created = await session("post", "/v1/api-keys").send({
+      name: "logged",
+      note: "Order service",
+      scopes: ["payments:read"],
+    });
+    const id = created.body.apiKey.id as string;
+    const key = created.body.key as string;
+    const secret = Keypair.random().secret();
+
+    await request(t.app).get("/v1/payments?limit=5").set(bearer(key));
+    await request(t.app).get(`/v1/payments?q=${secret}`).set(bearer(key));
+    await request(t.app).post("/v1/watches").set(bearer(key)).send({}); // 403: no watches:write
+    await waitFor(async () => (await prisma.apiKeyRequest.count({ where: { apiKeyId: id } })) === 3);
+
+    const detail = await session("get", `/v1/api-keys/${id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.apiKey).toMatchObject({ note: "Order service", scopes: ["payments:read"] });
+    expect(detail.body.usage).toMatchObject({ requests: 3, errors: 1 });
+    expect(detail.body.usage.hourly).toHaveLength(24);
+    expect(detail.body.usage.hourly.at(-1)).toMatchObject({ requests: 3, errors: 1 });
+    const rows = detail.body.recentRequests as { method: string; path: string; status: number }[];
+    expect(rows.map((r) => `${r.method} ${r.path} ${r.status}`).sort()).toEqual([
+      "GET /v1/payments 200",
+      "GET /v1/payments 200",
+      "POST /v1/watches 403",
+    ]);
+    expect(JSON.stringify(detail.body)).not.toContain(secret);
+
+    // Rolling keeps the settings; deleting removes the log.
+    const rolled = await session("post", `/v1/api-keys/${id}/roll`);
+    expect(rolled.body.apiKey).toMatchObject({ note: "Order service", scopes: ["payments:read"] });
+    await request(t.app)
+      .delete(`/v1/api-keys/${id}?permanent=true`)
+      .set("Cookie", dev.cookie)
+      .set("Origin", ORIGIN);
+    expect(await prisma.apiKeyRequest.count({ where: { apiKeyId: id } })).toBe(0);
+
+    const other = await t.signup();
+    expect(
+      (await request(t.app).get(`/v1/api-keys/${rolled.body.apiKey.id}`).set("Cookie", other.cookie))
+        .status,
+    ).toBe(404);
   });
 
   it("renames a key, rolls it with a 24 h overlap, and deletes it for good", async () => {
@@ -537,6 +762,42 @@ describe("endpoints", () => {
     expect(
       (await request(t.app).post(`/v1/watches/${watch.id}/resume`).set(bearer(aliceKey))).status,
     ).toBe(409);
+  });
+  it("an endpoint chooses which payment events it accepts, on top of the watch's choice", async () => {
+    const created = await request(t.app)
+      .post("/v1/endpoints")
+      .set(bearer(aliceKey))
+      .send({ url: "https://received-only.example.com/hook", eventTypes: ["payment.received"] });
+    expect(created.status).toBe(201);
+    expect(created.body.endpoint.eventTypes).toEqual(["payment.received"]);
+    const { watch } = await createWatch(created.body.endpoint.id, {
+      amountRule: { kind: "min", amount: "10" },
+      eventTypes: ["payment.received", "payment.rejected"],
+    });
+    const events = () =>
+      prisma.webhookEvent.findMany({ where: { match: { watchId: watch.id } }, select: { type: true } });
+
+    await pay(watch.id, { amountStroops: 10_000_000n }); // 1 USDC: rejected
+    expect(await prisma.paymentMatch.count({ where: { watchId: watch.id } })).toBe(1);
+    expect(await events()).toEqual([]);
+
+    const patched = await request(t.app)
+      .patch(`/v1/endpoints/${created.body.endpoint.id}`)
+      .set(bearer(aliceKey))
+      .send({ eventTypes: ["payment.received", "payment.rejected"] });
+    expect(patched.body.endpoint.eventTypes).toEqual(["payment.received", "payment.rejected"]);
+    await pay(watch.id, { amountStroops: 20_000_000n });
+    expect(await events()).toEqual([{ type: "payment.rejected" }]);
+
+    const none = await request(t.app)
+      .patch(`/v1/endpoints/${created.body.endpoint.id}`)
+      .set(bearer(aliceKey))
+      .send({ eventTypes: [] });
+    expect(none.status).toBe(400);
+    // The default is both, so existing behaviour is unchanged.
+    expect((await createEndpoint()).endpoint).toMatchObject({
+      eventTypes: ["payment.received", "payment.rejected"],
+    });
   });
 });
 
@@ -1103,6 +1364,7 @@ describe("tenant isolation", () => {
           `${method} ${path().replace(ids.endpoint!, "{id}").replace(ids.watch!, "{id}").replace(ids.event!, "{id}").replace(ids.payment!, "{eventId}")}`,
       ),
       "delete /v1/api-keys/{id}",
+      "get /v1/api-keys/{id}",
       "patch /v1/api-keys/{id}",
       "post /v1/api-keys/{id}/roll",
       // A wallet on the public ledger is not tenant data: any developer may look any address up.
@@ -1168,7 +1430,9 @@ describe("documented responses", () => {
       await session("post", "/v1/api-keys").send({ name: "second" }),
       201,
     );
-    matches(R.apiKeyListResponse, await session("get", "/v1/api-keys"));
+    const keys = await session("get", "/v1/api-keys");
+    matches(R.apiKeyListResponse, keys);
+    matches(R.apiKeyDetailResponse, await session("get", `/v1/api-keys/${keys.body.data[0].id}`));
 
     const created = await api("post", "/v1/endpoints").send({
       url: "https://docs.example.com/hook",

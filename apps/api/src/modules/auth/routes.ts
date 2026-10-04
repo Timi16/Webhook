@@ -1,5 +1,7 @@
 import {
+  changeEmailSchema,
   changePasswordSchema,
+  confirmEmailSchema,
   deleteAccountSchema,
   developerEnvelope,
   forgotPasswordSchema,
@@ -131,7 +133,7 @@ export function createAuthRouter(
       path: "/auth/me",
       response: developerEnvelope,
       summary: "Update your profile",
-      description: "Changes the name shown in the dashboard.",
+      description: "Changes your name or the workspace name shown in the dashboard.",
       tag: "Auth",
       auth: "session",
       body: updateProfileSchema,
@@ -173,6 +175,40 @@ export function createAuthRouter(
       before: [guards.authLimit],
     },
     ({ auth, body }) => service.changePassword(auth.developerId, auth.sessionId, body),
+  );
+
+  api(
+    router,
+    {
+      method: "post",
+      path: "/auth/email",
+      summary: "Request an email change",
+      description:
+        "Emails a confirmation link, valid for one hour, to the new address. The login email changes only when that link is opened. Needs the current password.",
+      tag: "Auth",
+      auth: "session",
+      status: 204,
+      body: changeEmailSchema,
+      before: [guards.authLimit],
+    },
+    ({ auth, body }) => service.requestEmailChange(auth.developerId, body),
+  );
+
+  api(
+    router,
+    {
+      method: "post",
+      path: "/auth/email/confirm",
+      response: developerEnvelope,
+      summary: "Confirm an email change",
+      description:
+        "Makes the new address the login email, using the token from the confirmation email. A token stops working once the email changes.",
+      tag: "Auth",
+      auth: "none",
+      body: confirmEmailSchema,
+      before,
+    },
+    ({ body }) => service.confirmEmailChange(body.token),
   );
 
   api(
