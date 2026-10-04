@@ -207,51 +207,7 @@ Keys are created with a logged-in session (\`POST /v1/api-keys\`) and shown once
 endpoints and API-key management use the session cookie instead, and their state-changing requests
 must carry an \`Origin\` header equal to the dashboard's origin.
 
-## Your first request
-
-List your watches. Every other endpoint is called the same way; pick a language beside any
-endpoint below to see that request written out.
-
-**curl**
-
-\`\`\`bash
-curl ${serverUrl}/v1/watches \\
-  -H "Authorization: Bearer $WEBHOOK_API_KEY"
-\`\`\`
-
-**Node.js**
-
-\`\`\`js
-const res = await fetch("${serverUrl}/v1/watches", {
-  headers: { Authorization: "Bearer " + process.env.WEBHOOK_API_KEY },
-});
-console.log(await res.json());
-\`\`\`
-
-**Python**
-
-\`\`\`python
-import os, requests
-
-res = requests.get(
-    "${serverUrl}/v1/watches",
-    headers={"Authorization": "Bearer " + os.environ["WEBHOOK_API_KEY"]},
-)
-print(res.json())
-\`\`\`
-
-**Ruby**
-
-\`\`\`ruby
-require "json"
-require "net/http"
-
-uri = URI("${serverUrl}/v1/watches")
-request = Net::HTTP::Get.new(uri)
-request["Authorization"] = "Bearer " + ENV.fetch("WEBHOOK_API_KEY")
-response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
-puts JSON.parse(response.body)
-\`\`\`
+Pick a language under **Client Libraries** for a complete request written in it.
 
 ## Errors
 

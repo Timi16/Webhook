@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "openapi": "pnpm --filter @webhook/api openapi ../docs/public/openapi.json",
+    "openapi": "pnpm --filter @webhook/api openapi ../docs/public/openapi.json && node scripts/client-examples.mjs",
     "predev": "pnpm openapi",
     "dev": "next dev --port 3100",
     "prebuild": "pnpm openapi",
@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@scalar/api-reference-react": "^0.9.77",
     "cn": "^0.3.0",
     "fumadocs-core": "16.15.18",
     "fumadocs-mdx": "15.4.6",
@@ -19,10 +20,10 @@
     "lucide-react": "^1.47.0",
     "next": "16.3.5",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "@scalar/api-reference-react": "^0.9.77"
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@scalar/snippetz": "0.10.5",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/mdx": "^2.0.14",
     "@types/node": "^26.6.1",

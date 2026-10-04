@@ -154,6 +154,9 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@scalar/snippetz':
+        specifier: 0.10.5
+        version: 0.10.5
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
