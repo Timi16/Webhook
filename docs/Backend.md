@@ -378,6 +378,12 @@ GET /auth/me
 POST /auth/password
 currentPassword, newPassword
 204, all other sessions deleted
+PATCH /auth/me
+name
+200 { developer }
+DELETE /auth/me
+password
+204, deletes the account with its watches, endpoints, API keys and history; cookie cleared
 POST /auth/forgot
 email
 204 always (no account enumeration); emails a 1-hour reset link if RESEND_API_KEY is set
@@ -394,9 +400,15 @@ GET /v1/api-keys
 POST /v1/api-keys
 name
 201 { apiKey, key: "whk_test_…" }, full key shown only here
-DELETE /v1/api-keys/:id
+PATCH /v1/api-keys/:id
+name
+200 { apiKey }
+POST /v1/api-keys/:id/roll
 —
-204 (revoked, kept for history)
+201 { apiKey, key }, a new key; the old one keeps working for 24 hours
+DELETE /v1/api-keys/:id
+— (?permanent=true to remove it)
+204 (revoked, kept for history; with permanent=true the row is deleted)
 Endpoints (any)
 Method + path
 Body

@@ -14,11 +14,12 @@ The full spec lives in [docs/](docs/): [build plan](docs/BUILD_PLAN.md),
 | Path              | What it is                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------- |
 | `apps/api`        | One codebase, two processes: the REST API (`server.ts`) and the worker (`worker.ts`)   |
-| `packages/shared` | Zod schemas, amount helpers and StrKey checks shared with the future dashboard         |
+| `packages/shared` | Zod schemas, amount helpers and StrKey checks shared with the dashboard                |
+| `apps/web`        | The dashboard: landing page, setup flow and every product screen (Next.js static site) |
 | `apps/docs`       | Developer docs: guides (Fumadocs) and an API reference (Scalar) generated from the API |
 | `scripts`         | Testnet scenario, mock webhook receiver, seed and chaos checks                         |
 
-The dashboard (`apps/web`) and server deployment are not built yet.
+Server deployment is not set up yet; everything runs locally.
 
 ## Local setup
 
@@ -57,6 +58,21 @@ pnpm --filter @webhook/scripts scenario          # 20 real testnet payments, ass
 The scenario creates Friendbot accounts, sends every kind of payment (normal, wrong asset,
 fake-issuer USDC, wrong amount, memo cases, path payment, M-address, issuer mint) and checks that
 exactly 20 payments are recorded with the right outcomes and that 20 signed webhooks arrive.
+
+## Dashboard
+
+`apps/web` is the dashboard, a static Next.js site that talks to the API with the session cookie.
+
+```bash
+pnpm --filter @webhook/web dev      # http://localhost:3000 (the API must be running on :4000)
+pnpm --filter @webhook/web build    # static files in apps/web/out
+```
+
+Sign up at `/signup` and the setup flow (`/onboarding`) walks through adding a wallet, an endpoint,
+a test webhook and a first payment. Detail pages take their ID from the query string
+(`/payments/view?id=…`) because the site is static. Settings it reads at build time:
+`NEXT_PUBLIC_API_URL` (default `http://localhost:4000`), `NEXT_PUBLIC_DOCS_URL` and
+`NEXT_PUBLIC_ALLOW_INSECURE_TARGETS=true` to accept `http://` endpoint URLs in local development.
 
 ## Docs site
 
