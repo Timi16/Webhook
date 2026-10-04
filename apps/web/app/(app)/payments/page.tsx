@@ -5,7 +5,15 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
 import { FilterSelect, Pager, TableSkeleton, usePager } from "@/components/list";
-import { Amount, CopyButton, Empty, ErrorAlert, PageHead, StatusBadge } from "@/components/ui";
+import {
+  Address,
+  Amount,
+  CopyButton,
+  Empty,
+  ErrorAlert,
+  PageHead,
+  StatusBadge,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { dateTime, shortAddress } from "@/lib/format";
 import { useAction, useApi } from "@/lib/hooks";
@@ -271,7 +279,9 @@ function Payments() {
                         </Link>
                         <div className="wh-reason">{shortAddress(p.to)}</div>
                       </td>
-                      <td>{shortAddress(p.from)}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <Address value={p.from} label="Copy sender address" />
+                      </td>
                       <td className="num">
                         <Amount amount={p.amount} code={p.asset.code} />
                       </td>

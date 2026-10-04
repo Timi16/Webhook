@@ -5,11 +5,18 @@ import { Icon } from "@/components/icons";
 import { SystemPage } from "@/components/system";
 import { CopyButton } from "@/components/ui";
 
-export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function ErrorPage({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
   return (
     <SystemPage code="error" title="Something broke on our side">
       <p className="hint" style={{ fontSize: 14 }}>
-        It's not your code. Your watches keep running and webhooks keep retrying while this page is broken. Try again in a minute.
+        It's not your code. Your watches keep running and webhooks keep retrying while this page is
+        broken. Try again in a minute.
       </p>
       {error.digest && (
         <div className="result">

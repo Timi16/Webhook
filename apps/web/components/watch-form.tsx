@@ -11,6 +11,7 @@ import { shortAddress, shortUrl } from "@/lib/format";
 import { useAction, useApi } from "@/lib/hooks";
 import type { Endpoint, Watch } from "@/lib/types";
 import { Icon } from "./icons";
+import { CurlButton } from "./curl";
 import { CopyButton, ErrorAlert, PageHead } from "./ui";
 
 type AssetChoice = "USDC testnet" | "XLM" | "Custom";
@@ -205,16 +206,16 @@ export function WatchForm({ watch }: { watch?: Watch }) {
     (memoKind !== "equals" || memoValue !== "") &&
     (asset !== "Custom" || (customCode.trim() !== "" && customIssuer.trim() !== ""));
 
+  const body = {
+    label: label.trim() || null,
+    endpointId,
+    assets: [chosenAsset],
+    amountRule,
+    memoRule,
+    senderAllowlist: senders,
+    eventTypes: notifyRejected ? ["payment.received", "payment.rejected"] : ["payment.received"],
+  };
   const save = useAction(async () => {
-    const body = {
-      label: label.trim() || null,
-      endpointId,
-      assets: [chosenAsset],
-      amountRule,
-      memoRule,
-      senderAllowlist: senders,
-      eventTypes: notifyRejected ? ["payment.received", "payment.rejected"] : ["payment.received"],
-    };
     const saved = watch
       ? await api<{ watch: Watch }>(`/v1/watches/${watch.id}`, { method: "PATCH", body })
       : await api<{ watch: Watch }>("/v1/watches", {
@@ -669,6 +670,13 @@ export function WatchForm({ watch }: { watch?: Watch }) {
         />
       )}
       <div className="wh-row" style={{ justifyContent: "flex-end" }}>
+        {canSubmit && (
+          <CurlButton
+            method={watch ? "PATCH" : "POST"}
+            path={watch ? `/v1/watches/${watch.id}` : "/v1/watches"}
+            body={watch ? body : { ...body, walletAddress: addr }}
+          />
+        )}
         <Link
           className="wh-btn is-ghost"
           href={watch ? `/watches/view?id=${watch.id}` : "/watches"}

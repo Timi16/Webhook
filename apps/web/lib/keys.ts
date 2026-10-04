@@ -11,8 +11,10 @@ export type KeyStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 /** A rolled key carries its end date in revokedAt; until then it still works. */
 export function keyState(key: ApiKey): { status: KeyStatus; endsAt: string | null } {
   const now = Date.now();
-  if (key.revokedAt && new Date(key.revokedAt).getTime() <= now) return { status: "REVOKED", endsAt: null };
-  if (key.expiresAt && new Date(key.expiresAt).getTime() <= now) return { status: "EXPIRED", endsAt: null };
+  if (key.revokedAt && new Date(key.revokedAt).getTime() <= now)
+    return { status: "REVOKED", endsAt: null };
+  if (key.expiresAt && new Date(key.expiresAt).getTime() <= now)
+    return { status: "EXPIRED", endsAt: null };
   return { status: "ACTIVE", endsAt: key.revokedAt };
 }
 

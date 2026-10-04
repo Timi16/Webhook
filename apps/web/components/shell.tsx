@@ -8,6 +8,8 @@ import { DOCS_URL } from "@/lib/constants";
 import { initials } from "@/lib/format";
 import { useAction } from "@/lib/hooks";
 import { TestnetBanner } from "./banner";
+import { LiveToasts } from "./live-toasts";
+import { CommandPalette } from "./palette";
 import { Icon, Logo, type IconName } from "./icons";
 import { SessionGate, useSession } from "./session";
 import { useTheme, type ThemeChoice } from "./theme";
@@ -130,7 +132,7 @@ function AccountMenu({ displayName }: { displayName: string }) {
   );
 }
 
-function Nav() {
+function Nav({ onSearch }: { onSearch: () => void }) {
   const pathname = usePathname();
   const { developer } = useSession();
   const displayName = developer.name ?? developer.email.split("@")[0] ?? developer.email;
@@ -172,6 +174,16 @@ function Nav() {
         </button>
       </div>
       <div className="nav-body" id="nav-body">
+        <button
+          type="button"
+          className="nav-search"
+          title="Search (Ctrl or ⌘ K)"
+          onClick={onSearch}
+        >
+          <Icon name="search" size={18} />
+          <span>Search</span>
+          <kbd>⌘K</kbd>
+        </button>
         <ul className="nav-list">
           {NAV.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -207,14 +219,28 @@ function Nav() {
 
 /** The signed-in layout: testnet banner, navigation rail and the page. */
 export function AppShell({ children }: { children: ReactNode }) {
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearching((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <>
       <TestnetBanner />
       <SessionGate>
         <div className="shell">
-          <Nav />
+          <Nav onSearch={() => setSearching(true)} />
           <main className="main">{children}</main>
         </div>
+        <LiveToasts />
+        <CommandPalette open={searching} onClose={() => setSearching(false)} />
       </SessionGate>
     </>
   );

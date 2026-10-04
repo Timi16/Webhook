@@ -17,8 +17,30 @@ const ROLL = [
 
 // [verified, rejected] per hour for the dashboard preview.
 const HOURS: [number, number][] = [
-  [108, 5], [104, 5], [89, 5], [71, 3], [58, 2], [44, 2], [33, 1], [22, 1], [15, 1], [7, 1], [4, 0], [3, 0],
-  [2, 0], [2, 1], [3, 1], [9, 0], [24, 2], [53, 3], [80, 4], [97, 4], [106, 4], [102, 3], [93, 4], [100, 3],
+  [108, 5],
+  [104, 5],
+  [89, 5],
+  [71, 3],
+  [58, 2],
+  [44, 2],
+  [33, 1],
+  [22, 1],
+  [15, 1],
+  [7, 1],
+  [4, 0],
+  [3, 0],
+  [2, 0],
+  [2, 1],
+  [3, 1],
+  [9, 0],
+  [24, 2],
+  [53, 3],
+  [80, 4],
+  [97, 4],
+  [106, 4],
+  [102, 3],
+  [93, 4],
+  [100, 3],
 ];
 const PEAK = Math.max(...HOURS.map(([verified, rejected]) => verified + rejected));
 
@@ -85,7 +107,9 @@ export default function LandingPage() {
               Know the moment a Stellar payment <mark>lands.</mark>
             </h1>
             <p className="lede" data-in="">
-              Webhook watches your wallets, checks every payment against your rules, and POSTs a signed event to your server seconds after the ledger closes. Server down? We keep retrying for two days.
+              Webhook watches your wallets, checks every payment against your rules, and POSTs a
+              signed event to your server seconds after the ledger closes. Server down? We keep
+              retrying for two days.
             </p>
             <div className="ctas" data-in="">
               <Link className="lpr-btn primary" href="/signup">
@@ -101,7 +125,10 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="rc-wrap">
-            <div className="rc" aria-label="Example: a printed receipt for one verified and delivered payment">
+            <div
+              className="rc"
+              aria-label="Example: a printed receipt for one verified and delivered payment"
+            >
               <div className="c">
                 <b>WEBHOOK</b>
                 <br />
@@ -174,17 +201,26 @@ export default function LandingPage() {
             <div>
               <span className="n">01 · WATCH</span>
               <h3>Add a wallet</h3>
-              <p>Paste a public G… address. We confirm its trustlines and start reading every ledger for payments to it.</p>
+              <p>
+                Paste a public G… address. We confirm its trustlines and start reading every ledger
+                for payments to it.
+              </p>
             </div>
             <div>
               <span className="n">02 · VERIFY</span>
               <h3>Set the rules</h3>
-              <p>Asset, exact or ranged amount, memo, allowed senders. A payment that misses is rejected with a reason code, so you always know why.</p>
+              <p>
+                Asset, exact or ranged amount, memo, allowed senders. A payment that misses is
+                rejected with a reason code, so you always know why.
+              </p>
             </div>
             <div>
               <span className="n">03 · DELIVER</span>
               <h3>Get a signed webhook</h3>
-              <p>Verified or rejected, your server hears about it seconds after the ledger closes. If it doesn't answer 2xx, we keep trying for two days.</p>
+              <p>
+                Verified or rejected, your server hears about it seconds after the ledger closes. If
+                it doesn't answer 2xx, we keep trying for two days.
+              </p>
             </div>
           </div>
           <div className="lpr-roll" data-reveal="" aria-label="Example: payments printing live">
@@ -213,9 +249,14 @@ export default function LandingPage() {
           </span>
           <h2 data-reveal="">Every payment, rule and retry in one place.</h2>
           <p className="sl" data-reveal="">
-            Watch payments land live, see exactly why one was rejected, and replay anything your server missed.
+            Watch payments land live, see exactly why one was rejected, and replay anything your
+            server missed.
           </p>
-          <div className="lpr-dash" data-reveal="" aria-label="Preview of the Webhook dashboard, with example data">
+          <div
+            className="lpr-dash"
+            data-reveal=""
+            aria-label="Preview of the Webhook dashboard, with example data"
+          >
             <div className="chrome">
               <i />
               <i />
@@ -252,7 +293,14 @@ export default function LandingPage() {
                   <header className="page-head">
                     <div className="ph-row">
                       <div className="ph-text">
-                        <p className="display" style={{ margin: 0, font: '800 30px/1.1 "Bricolage Grotesque", sans-serif', letterSpacing: "-0.03em" }}>
+                        <p
+                          className="display"
+                          style={{
+                            margin: 0,
+                            font: '800 30px/1.1 "Bricolage Grotesque", sans-serif',
+                            letterSpacing: "-0.03em",
+                          }}
+                        >
                           Overview
                         </p>
                         <p className="sub">Last 24 hours · Stellar Testnet</p>
@@ -296,13 +344,20 @@ export default function LandingPage() {
                         </span>
                       </span>
                     </header>
-                    <div className="chart" role="img" aria-label="Example chart: payments per hour over 24 hours, mostly verified.">
+                    <div
+                      className="chart"
+                      role="img"
+                      aria-label="Example chart: payments per hour over 24 hours, mostly verified."
+                    >
                       <div className="bars">
                         {HOURS.map(([verified, rejected], i) => (
                           <div
                             className={i === HOURS.length - 1 ? "bar is-now" : "bar"}
                             key={i}
-                            style={{ height: Math.max(4, Math.round(((verified + rejected) / PEAK) * 128)), animationDelay: `${i * 25}ms` }}
+                            style={{
+                              height: Math.max(4, Math.round(((verified + rejected) / PEAK) * 128)),
+                              animationDelay: `${i * 25}ms`,
+                            }}
                           >
                             <span className="ok" style={{ flex: `${verified} 1 0` }} />
                             <span className="bad" style={{ flex: `${rejected} 1 0` }} />
@@ -335,7 +390,10 @@ export default function LandingPage() {
                 <Icon name="list-checks" size={20} />
                 Rules, not regex
               </h3>
-              <p>Exact, min, max or range on the amount. Memo equals, present or absent. A sender allowlist when you need one. Every payment shows which rule passed and which failed.</p>
+              <p>
+                Exact, min, max or range on the amount. Memo equals, present or absent. A sender
+                allowlist when you need one. Every payment shows which rule passed and which failed.
+              </p>
               <div className="tags">
                 <span className="t-ok">pass</span>
                 <span className="t-bad">fail</span>
@@ -347,7 +405,10 @@ export default function LandingPage() {
                 <Icon name="rotate" size={20} />
                 Retries you can see
               </h3>
-              <p>Every attempt is logged with its status code, latency and the first 1 KB of your response. Missed a deploy? Replay every failed event since any time.</p>
+              <p>
+                Every attempt is logged with its status code, latency and the first 1 KB of your
+                response. Missed a deploy? Replay every failed event since any time.
+              </p>
               <div className="tags">
                 <span className="t-bad">failed</span>
                 <span className="t-warn">retrying</span>
@@ -359,14 +420,21 @@ export default function LandingPage() {
                 <Icon name="shield-check" size={20} />
                 Secrets stay secret
               </h3>
-              <p>Signing secrets and API keys are shown once. Rotating keeps the old secret valid for 24 hours, so you deploy without dropping events. Paste an S… secret key by mistake and we refuse it.</p>
+              <p>
+                Signing secrets and API keys are shown once. Rotating keeps the old secret valid for
+                24 hours, so you deploy without dropping events. Paste an S… secret key by mistake
+                and we refuse it.
+              </p>
             </div>
             <div className="card" data-reveal="">
               <h3>
                 <Icon name="wifi" size={20} />
                 Made for real-world networks
               </h3>
-              <p>The dashboard is light, works on a 360 px phone and holds its place on a slow connection. If the network lags, we catch up ledger by ledger. Nothing is skipped.</p>
+              <p>
+                The dashboard is light, works on a 360 px phone and holds its place on a slow
+                connection. If the network lags, we catch up ledger by ledger. Nothing is skipped.
+              </p>
             </div>
           </div>
         </section>
@@ -376,7 +444,10 @@ export default function LandingPage() {
             <div data-reveal="">
               <span className="eb">For developers</span>
               <h2>Verify one header. Ship the feature.</h2>
-              <p className="sl">One shared secret, one HMAC, one comparison. The payload carries the payment exactly as it landed on the ledger, tx hash included, so you can check it yourself.</p>
+              <p className="sl">
+                One shared secret, one HMAC, one comparison. The payload carries the payment exactly
+                as it landed on the ledger, tx hash included, so you can check it yourself.
+              </p>
               <div className="ctas">
                 <Link className="lpr-btn primary" href="/signup">
                   Get an API key
@@ -387,8 +458,15 @@ export default function LandingPage() {
                 </a>
               </div>
             </div>
-            <pre className="lpr-code" data-reveal="" tabIndex={0} aria-label="Example: verifying a webhook signature in Express">
-              <span className="c">{"// Express: verify the signature, then trust the payload\n"}</span>
+            <pre
+              className="lpr-code"
+              data-reveal=""
+              tabIndex={0}
+              aria-label="Example: verifying a webhook signature in Express"
+            >
+              <span className="c">
+                {"// Express: verify the signature, then trust the payload\n"}
+              </span>
               <span className="k">const</span>
               {' raw = express.raw({ type: "application/json" });\n\n'}
               <span className="k">app</span>
@@ -415,7 +493,9 @@ export default function LandingPage() {
               {"  res.sendStatus(200); "}
               <span className="c">{"// anything else and we retry\n"}</span>
               {"});\n"}
-              <span className="c">{"// matches(): a constant-time compare. Full version in the docs."}</span>
+              <span className="c">
+                {"// matches(): a constant-time compare. Full version in the docs."}
+              </span>
             </pre>
           </div>
         </section>

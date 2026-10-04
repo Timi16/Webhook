@@ -16,7 +16,19 @@ interface TestResponse {
   attempt: { statusCode: number | null; durationMs: number; error: string | null } | null;
 }
 
-function Step({ number, title, done, current, children }: { number: number; title: string; done: boolean; current: boolean; children: ReactNode }) {
+function Step({
+  number,
+  title,
+  done,
+  current,
+  children,
+}: {
+  number: number;
+  title: string;
+  done: boolean;
+  current: boolean;
+  children: ReactNode;
+}) {
   return (
     <li className={current ? "step is-current" : "step"}>
       {done ? (
@@ -54,7 +66,14 @@ export default function OnboardingPage() {
     const result = await api<TestResponse>(`/v1/endpoints/${endpoint.id}/test`, { method: "POST" });
     const status = result.attempt?.statusCode;
     if (result.attempt && status != null && status >= 200 && status < 300) {
-      setup.saveDraft({ test: { endpointId: endpoint.id, eventId: result.eventId, statusCode: status, durationMs: result.attempt.durationMs } });
+      setup.saveDraft({
+        test: {
+          endpointId: endpoint.id,
+          eventId: result.eventId,
+          statusCode: status,
+          durationMs: result.attempt.durationMs,
+        },
+      });
     }
     return result;
   });
@@ -71,10 +90,14 @@ export default function OnboardingPage() {
             <span className="net">testnet</span>
           </span>
           <h1 className="display">Get your first webhook in 4 steps</h1>
-          <p className="hint">About five minutes. Everything runs on Stellar Testnet, so no real money moves.</p>
+          <p className="hint">
+            About five minutes. Everything runs on Stellar Testnet, so no real money moves.
+          </p>
           <div className="wh-row" style={{ justifyContent: "space-between" }}>
             <span className="fine">{setup.ready ? `${doneCount} of 4 done` : "Loading…"}</span>
-            <Link href={doneCount === 4 ? "/onboarding/done" : "/overview"}>{doneCount === 4 ? "See your setup receipt" : "Skip to overview"}</Link>
+            <Link href={doneCount === 4 ? "/onboarding/done" : "/overview"}>
+              {doneCount === 4 ? "See your setup receipt" : "Skip to overview"}
+            </Link>
           </div>
           <div className="progress" aria-hidden="true">
             {order.map((key) => (
@@ -83,7 +106,11 @@ export default function OnboardingPage() {
           </div>
         </div>
         {setup.error && !setup.ready ? (
-          <ErrorAlert error={setup.error} title="Couldn't load your setup." onRetry={setup.reload} />
+          <ErrorAlert
+            error={setup.error}
+            title="Couldn't load your setup."
+            onRetry={setup.reload}
+          />
         ) : !setup.ready ? (
           <div aria-busy="true" style={{ minHeight: 320 }} />
         ) : (
@@ -103,7 +130,9 @@ export default function OnboardingPage() {
                 </>
               ) : (
                 <>
-                  <p className="hint">Paste the public address that receives payments and say which payments count.</p>
+                  <p className="hint">
+                    Paste the public address that receives payments and say which payments count.
+                  </p>
                   <div className="wh-row">
                     <Link className="wh-btn is-primary" href="/onboarding/wallet">
                       <Icon name="wallet" />
@@ -113,7 +142,12 @@ export default function OnboardingPage() {
                 </>
               )}
             </Step>
-            <Step number={2} title="Set your webhook endpoint" done={done.endpoint} current={current === "endpoint"}>
+            <Step
+              number={2}
+              title="Set your webhook endpoint"
+              done={done.endpoint}
+              current={current === "endpoint"}
+            >
               {done.endpoint && endpoint ? (
                 <>
                   <p className="done-line">{shortUrl(endpoint.url)} · signing secret issued</p>
@@ -125,9 +159,15 @@ export default function OnboardingPage() {
                 </>
               ) : (
                 <>
-                  <p className="hint">A public HTTPS URL on your server. You get a signing secret to verify what we send.</p>
+                  <p className="hint">
+                    A public HTTPS URL on your server. You get a signing secret to verify what we
+                    send.
+                  </p>
                   <div className="wh-row">
-                    <Link className={current === "endpoint" ? "wh-btn is-primary" : "wh-btn"} href="/onboarding/endpoint">
+                    <Link
+                      className={current === "endpoint" ? "wh-btn is-primary" : "wh-btn"}
+                      href="/onboarding/endpoint"
+                    >
                       <Icon name="webhook" />
                       Set your endpoint
                     </Link>
@@ -135,7 +175,12 @@ export default function OnboardingPage() {
                 </>
               )}
             </Step>
-            <Step number={3} title="Send a test webhook" done={done.test} current={current === "test"}>
+            <Step
+              number={3}
+              title="Send a test webhook"
+              done={done.test}
+              current={current === "test"}
+            >
               {test ? (
                 <div className="result" role="status">
                   <span className="wh-badge is-ok">
@@ -143,7 +188,8 @@ export default function OnboardingPage() {
                     delivered
                   </span>
                   <span>
-                    <strong style={{ color: "var(--ink)" }}>{test.statusCode} OK</strong> in {duration(test.durationMs)}
+                    <strong style={{ color: "var(--ink)" }}>{test.statusCode} OK</strong> in{" "}
+                    {duration(test.durationMs)}
                   </span>
                   <span>{test.eventId}</span>
                 </div>
@@ -154,10 +200,16 @@ export default function OnboardingPage() {
                     <span className="mono" style={{ color: "var(--ink)" }}>
                       test.ping
                     </span>{" "}
-                    to your endpoint. Check that your code verifies the signature and returns 2xx within 10 seconds.
+                    to your endpoint. Check that your code verifies the signature and returns 2xx
+                    within 10 seconds.
                   </p>
                   <div className="wh-row">
-                    <button className="wh-btn is-primary" type="button" disabled={!endpoint || sendTest.pending} onClick={() => void sendTest.run()}>
+                    <button
+                      className="wh-btn is-primary"
+                      type="button"
+                      disabled={!endpoint || sendTest.pending}
+                      onClick={() => void sendTest.run()}
+                    >
                       <Icon name="send" />
                       {sendTest.pending ? "Sending…" : "Send test webhook"}
                     </button>
@@ -165,18 +217,29 @@ export default function OnboardingPage() {
                       Open step
                     </Link>
                   </div>
-                  {sendTest.error && <ErrorAlert error={sendTest.error} title="The test couldn't be sent." />}
+                  {sendTest.error && (
+                    <ErrorAlert error={sendTest.error} title="The test couldn't be sent." />
+                  )}
                 </>
               )}
             </Step>
-            <Step number={4} title="Make a testnet payment" done={done.payment} current={current === "payment"}>
+            <Step
+              number={4}
+              title="Make a testnet payment"
+              done={done.payment}
+              current={current === "payment"}
+            >
               {payment ? (
                 <>
                   <p className="done-line">
-                    {payment.amount} {payment.asset.code} from {shortAddress(payment.from)} · ledger {payment.ledger}
+                    {payment.amount} {payment.asset.code} from {shortAddress(payment.from)} · ledger{" "}
+                    {payment.ledger}
                   </p>
                   <div className="wh-row">
-                    <Link className="wh-btn is-sm is-ghost" href={`/payments/view?id=${payment.id}`}>
+                    <Link
+                      className="wh-btn is-sm is-ghost"
+                      href={`/payments/view?id=${payment.id}`}
+                    >
                       View payment
                     </Link>
                   </div>
@@ -184,7 +247,8 @@ export default function OnboardingPage() {
               ) : (
                 <>
                   <p className="hint">
-                    Send a testnet payment to your watched wallet from another testnet account. We'll verify it and fire{" "}
+                    Send a testnet payment to your watched wallet from another testnet account.
+                    We'll verify it and fire{" "}
                     <span className="mono" style={{ color: "var(--ink)" }}>
                       payment.received
                     </span>

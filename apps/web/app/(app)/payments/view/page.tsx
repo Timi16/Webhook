@@ -3,14 +3,23 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { WithId } from "@/components/query";
-import { Amount, CopyButton, Empty, ErrorAlert, PageHead, StatusBadge } from "@/components/ui";
+import { CurlButton } from "@/components/curl";
+import {
+  Amount,
+  CopyButton,
+  Empty,
+  ErrorAlert,
+  ExplorerLink,
+  PageHead,
+  StatusBadge,
+} from "@/components/ui";
+import { explorer } from "@/lib/explorer";
 import { clockTime, dateTime, shortAddress, shortUrl } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import { amountRuleLong, assetCodes, memoRuleLong } from "@/lib/rules";
 import type { Endpoint, PaymentDetail, Watch } from "@/lib/types";
 
 type Match = PaymentDetail["matches"][number];
-const EXPLORER = "https://stellar.expert/explorer/testnet";
 
 const utc = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 
@@ -256,7 +265,7 @@ function PaymentView({ id }: { id: string }) {
 
   const first = payment.matches[0];
   const watchFor = (match: Match) => watches.data?.data.find((w) => w.id === match.watchId);
-  const tx = `${EXPLORER}/tx/${payment.txHash}`;
+  const tx = explorer.tx(payment.txHash);
 
   return (
     <>
@@ -267,6 +276,7 @@ function PaymentView({ id }: { id: string }) {
         actions={
           <>
             {first && <StatusBadge status={first.outcome} />}
+            <CurlButton path={`/v1/payments/${encodeURIComponent(payment.id)}`} />
             <a className="wh-btn" href={tx} target="_blank" rel="noopener">
               <Icon name="external-link" />
               View on stellar.expert
@@ -307,6 +317,7 @@ function PaymentView({ id }: { id: string }) {
             <dt>Wallet</dt>
             <dd>
               {payment.to} <CopyButton value={payment.to} label="Copy wallet address" />
+              <ExplorerLink address={payment.to} />
               {first?.watchLabel && <div className="wh-reason">{first.watchLabel}</div>}
             </dd>
             {payment.toMuxedId && (
@@ -318,6 +329,7 @@ function PaymentView({ id }: { id: string }) {
             <dt>From</dt>
             <dd>
               {payment.from} <CopyButton value={payment.from} label="Copy sender address" />
+              <ExplorerLink address={payment.from} />
             </dd>
             <dt>Amount</dt>
             <dd>
@@ -348,7 +360,7 @@ function PaymentView({ id }: { id: string }) {
             <dd>
               <a
                 className="wh-hash"
-                href={`${EXPLORER}/ledger/${payment.ledger}`}
+                href={explorer.ledger(payment.ledger)}
                 target="_blank"
                 rel="noopener"
               >

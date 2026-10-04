@@ -27,7 +27,12 @@ export function Modal({
 
   return (
     <div className="overlay">
-      <div className={wide ? "wh-modal is-wide" : "wh-modal"} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div
+        className={wide ? "wh-modal is-wide" : "wh-modal"}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <header>
           <h2 id={titleId}>{title}</h2>
         </header>

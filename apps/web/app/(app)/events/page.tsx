@@ -21,12 +21,23 @@ function localInput(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function Replay({ endpoints, onClose, onDone }: { endpoints: Endpoint[]; onClose: () => void; onDone: () => void }) {
+function Replay({
+  endpoints,
+  onClose,
+  onDone,
+}: {
+  endpoints: Endpoint[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const [since, setSince] = useState(() => localInput(new Date(Date.now() - 24 * 3_600_000)));
   const [endpointId, setEndpointId] = useState(endpoints[0]?.id ?? "");
   const [requeued, setRequeued] = useState<number>();
   const replay = useAction(async () => {
-    const result = await api<{ requeued: number }>(`/v1/endpoints/${endpointId}/replay`, { method: "POST", body: { since: new Date(since).toISOString() } });
+    const result = await api<{ requeued: number }>(`/v1/endpoints/${endpointId}/replay`, {
+      method: "POST",
+      body: { since: new Date(since).toISOString() },
+    });
     setRequeued(result.requeued);
     onDone();
   });
@@ -39,7 +50,12 @@ function Replay({ endpoints, onClose, onDone }: { endpoints: Endpoint[]; onClose
           <Icon name="rotate" />
           Replay failed events
         </span>
-        <button className="wh-btn is-icon is-ghost" type="button" aria-label="Close" onClick={onClose}>
+        <button
+          className="wh-btn is-icon is-ghost"
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+        >
           <Icon name="x" />
         </button>
       </header>
@@ -47,11 +63,22 @@ function Replay({ endpoints, onClose, onDone }: { endpoints: Endpoint[]; onClose
         <div className="form-grid">
           <div className="wh-field">
             <label htmlFor="since">Failed since</label>
-            <input id="since" className="wh-input mono" type="datetime-local" value={since} onChange={(e) => setSince(e.target.value)} />
+            <input
+              id="since"
+              className="wh-input mono"
+              type="datetime-local"
+              value={since}
+              onChange={(e) => setSince(e.target.value)}
+            />
           </div>
           <div className="wh-field">
             <label htmlFor="replay-endpoint">Endpoint</label>
-            <FilterSelect label="Endpoint" value={endpointId} onChange={setEndpointId} options={endpoints.map((e) => ({ value: e.id, label: shortUrl(e.url) }))} />
+            <FilterSelect
+              label="Endpoint"
+              value={endpointId}
+              onChange={setEndpointId}
+              options={endpoints.map((e) => ({ value: e.id, label: shortUrl(e.url) }))}
+            />
           </div>
         </div>
         <div className="result">
@@ -59,7 +86,9 @@ function Replay({ endpoints, onClose, onDone }: { endpoints: Endpoint[]; onClose
           <span>
             {requeued === undefined ? (
               <>
-                Failed deliveries created since then are sent again, oldest first, up to 1,000, with fresh signatures. The event IDs don't change, so dedupe on <span style={{ color: "var(--ink)" }}>id</span>.
+                Failed deliveries created since then are sent again, oldest first, up to 1,000, with
+                fresh signatures. The event IDs don't change, so dedupe on{" "}
+                <span style={{ color: "var(--ink)" }}>id</span>.
               </>
             ) : requeued === 0 ? (
               "No failed deliveries since then for this endpoint."
@@ -85,7 +114,12 @@ function Replay({ endpoints, onClose, onDone }: { endpoints: Endpoint[]; onClose
         <button className="wh-btn is-ghost" type="button" onClick={onClose}>
           {requeued === undefined ? "Cancel" : "Close"}
         </button>
-        <button className="wh-btn is-primary" type="button" disabled={!endpointId || !since || replay.pending} onClick={() => void replay.run()}>
+        <button
+          className="wh-btn is-primary"
+          type="button"
+          disabled={!endpointId || !since || replay.pending}
+          onClick={() => void replay.run()}
+        >
           <Icon name="rotate" />
           {replay.pending ? "Replaying…" : "Replay failed events"}
         </button>
@@ -118,7 +152,10 @@ export default function EventsPage() {
   params.set("limit", String(PAGE_SIZE));
   if (pager.cursor) params.set("cursor", pager.cursor);
 
-  const events = useApi<Page<EventRow>>(`/v1/events?${params.toString()}`, pager.page === 1 ? ["payment.detected", "delivery.updated"] : ["delivery.updated"]);
+  const events = useApi<Page<EventRow>>(
+    `/v1/events?${params.toString()}`,
+    pager.page === 1 ? ["payment.detected", "delivery.updated"] : ["delivery.updated"],
+  );
   const rows = events.data?.data ?? [];
   const allEndpoints = endpoints.data?.data ?? [];
   const host = (event: EventRow) => {
@@ -133,27 +170,69 @@ export default function EventsPage() {
         title="Webhook events"
         sub="Every webhook we've sent, with its delivery status."
         actions={
-          <button className="wh-btn" type="button" disabled={allEndpoints.length === 0} onClick={() => setReplaying(true)}>
+          <button
+            className="wh-btn"
+            type="button"
+            disabled={allEndpoints.length === 0}
+            onClick={() => setReplaying(true)}
+          >
             <Icon name="rotate" />
             Replay failed events since…
           </button>
         }
       />
-      {replaying && <Replay endpoints={allEndpoints} onClose={() => setReplaying(false)} onDone={events.reload} />}
+      {replaying && (
+        <Replay
+          endpoints={allEndpoints}
+          onClose={() => setReplaying(false)}
+          onDone={events.reload}
+        />
+      )}
       <div className="filters">
         <div className="search">
           <label className="sr-only" htmlFor="eq">
             Search events
           </label>
           <Icon name="search" />
-          <input id="eq" className="wh-input" placeholder="Search event ID or payment ID" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input
+            id="eq"
+            className="wh-input"
+            placeholder="Search event ID or payment ID"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-        <FilterSelect label="Type" value={type} onChange={setType} options={[{ value: "", label: "All" }, ...TYPES.map((t) => ({ value: t, label: t }))]} />
-        <FilterSelect label="Delivery" value={status} onChange={setStatus} options={[{ value: "", label: "All" }, ...STATUSES.map((s) => ({ value: s, label: s.toLowerCase() }))]} />
-        <FilterSelect label="Endpoint" value={endpointId} onChange={setEndpointId} options={[{ value: "", label: "All" }, ...allEndpoints.map((e) => ({ value: e.id, label: shortUrl(e.url) }))]} />
+        <FilterSelect
+          label="Type"
+          value={type}
+          onChange={setType}
+          options={[{ value: "", label: "All" }, ...TYPES.map((t) => ({ value: t, label: t }))]}
+        />
+        <FilterSelect
+          label="Delivery"
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "", label: "All" },
+            ...STATUSES.map((s) => ({ value: s, label: s.toLowerCase() })),
+          ]}
+        />
+        <FilterSelect
+          label="Endpoint"
+          value={endpointId}
+          onChange={setEndpointId}
+          options={[
+            { value: "", label: "All" },
+            ...allEndpoints.map((e) => ({ value: e.id, label: shortUrl(e.url) })),
+          ]}
+        />
       </div>
       {events.error && !events.data ? (
-        <ErrorAlert error={events.error} title="Couldn't load webhook events." onRetry={events.reload} />
+        <ErrorAlert
+          error={events.error}
+          title="Couldn't load webhook events."
+          onRetry={events.reload}
+        />
       ) : !events.data ? (
         <TableSkeleton columns={COLUMNS} widths={[150, 110, 96, 120, 24, 72]} />
       ) : rows.length === 0 && pager.page === 1 ? (
@@ -172,7 +251,8 @@ export default function EventsPage() {
               </Link>
             }
           >
-            Events appear when a watched wallet gets paid, or when you send a test. Send one now to check your endpoint is wired up.
+            Events appear when a watched wallet gets paid, or when you send a test. Send one now to
+            check your endpoint is wired up.
           </Empty>
         )
       ) : (
@@ -205,7 +285,9 @@ export default function EventsPage() {
                       <td className="muted">{dateTime(event.createdAt)}</td>
                       <td>{host(event)}</td>
                       <td className="num">{delivery?.attemptCount ?? 0}</td>
-                      <td style={{ paddingTop: 8, paddingBottom: 8 }}>{delivery && <StatusBadge status={delivery.status} />}</td>
+                      <td style={{ paddingTop: 8, paddingBottom: 8 }}>
+                        {delivery && <StatusBadge status={delivery.status} />}
+                      </td>
                     </tr>
                   );
                 })}
@@ -235,7 +317,14 @@ export default function EventsPage() {
               })}
             </div>
           </div>
-          <Pager page={pager.page} count={rows.length} noun="event" nextCursor={events.data.nextCursor} onOlder={pager.older} onNewer={pager.newer} />
+          <Pager
+            page={pager.page}
+            count={rows.length}
+            noun="event"
+            nextCursor={events.data.nextCursor}
+            onOlder={pager.older}
+            onNewer={pager.newer}
+          />
         </>
       )}
     </>

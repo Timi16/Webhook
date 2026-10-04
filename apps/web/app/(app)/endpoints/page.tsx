@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "@/components/icons";
 import { Modal } from "@/components/modal";
 import { SecretModal } from "@/components/secret";
+import { CurlButton } from "@/components/curl";
 import { CopyButton, Empty, ErrorAlert, PageHead, StatusBadge } from "@/components/ui";
 import { api } from "@/lib/api";
 import { clockTime, dateTime, duration, shortUrl } from "@/lib/format";
@@ -42,7 +43,9 @@ function AddEndpoint({
 }) {
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
-  const [rejected_, setRejected] = useState(true);
+  const [events, setEvents] = useState(["payment.received", "payment.rejected"]);
+  const toggleEvent = (type: string) =>
+    setEvents(events.includes(type) ? events.filter((e) => e !== type) : [...events, type]);
   const [created, setCreated] = useState<{ endpoint: Endpoint; secret: string }>();
   const state = urlState(url, existing);
   const save = useAction(async () => {
@@ -51,7 +54,7 @@ function AddEndpoint({
       body: {
         url: url.trim(),
         ...(description.trim() ? { description: description.trim() } : {}),
-        eventTypes: rejected_ ? ["payment.received", "payment.rejected"] : ["payment.received"],
+        eventTypes: events,
       },
     });
     setCreated(result);
@@ -97,7 +100,7 @@ function AddEndpoint({
           <button
             className="wh-btn is-primary"
             type="button"
-            disabled={state !== "ok" || save.pending}
+            disabled={state !== "ok" || events.length === 0 || save.pending}
             onClick={() => void save.run()}
           >
             <Icon name="save" />
@@ -183,7 +186,11 @@ function AddEndpoint({
         <span style={{ font: "600 13px/16px var(--font-sans)" }}>Events to send</span>
         <div className="wz-checks">
           <label className="wz-check">
-            <input type="checkbox" checked disabled />
+            <input
+              type="checkbox"
+              checked={events.includes("payment.received")}
+              onChange={() => toggleEvent("payment.received")}
+            />
             <span>
               <b>payment.received</b>
               <span>A payment matched your rules.</span>
@@ -192,8 +199,8 @@ function AddEndpoint({
           <label className="wz-check">
             <input
               type="checkbox"
-              checked={rejected_}
-              onChange={(e) => setRejected(e.target.checked)}
+              checked={events.includes("payment.rejected")}
+              onChange={() => toggleEvent("payment.rejected")}
             />
             <span>
               <b>payment.rejected</b>
@@ -201,6 +208,12 @@ function AddEndpoint({
             </span>
           </label>
         </div>
+        {events.length === 0 && (
+          <span className="wh-help is-bad" role="alert">
+            <Icon name="alert-circle" />
+            Pick at least one event.
+          </span>
+        )}
       </div>
       {save.error && (
         <div className="wh-help is-bad" role="alert">
@@ -252,14 +265,12 @@ function EndpointCard({ endpoint, onChanged }: { endpoint: Endpoint; onChanged: 
     setDialog(undefined);
     onChanged();
   });
-  const sendsRejected = endpoint.eventTypes.includes("payment.rejected");
-  const setEvents = useAction(async (withRejected: boolean) => {
-    await api(`/v1/endpoints/${endpoint.id}`, {
-      method: "PATCH",
-      body: {
-        eventTypes: withRejected ? ["payment.received", "payment.rejected"] : ["payment.received"],
-      },
-    });
+  // Either event can be switched off, but never both: the last one stays ticked.
+  const setEvents = useAction(async (type: string, on: boolean) => {
+    const eventTypes = on
+      ? [...endpoint.eventTypes, type]
+      : endpoint.eventTypes.filter((e) => e !== type);
+    await api(`/v1/endpoints/${endpoint.id}`, { method: "PATCH", body: { eventTypes } });
     onChanged();
   });
   const remove = useAction(async () => {
@@ -302,16 +313,20 @@ function EndpointCard({ endpoint, onChanged }: { endpoint: Endpoint; onChanged: 
           )}
           <dt>Events to send</dt>
           <dd className="wh-row" style={{ fontFamily: "var(--font-sans)", flexWrap: "wrap" }}>
-            <span className="scope-chip">payment.received</span>
-            <label className="wh-check" style={{ whiteSpace: "nowrap" }}>
-              <input
-                type="checkbox"
-                checked={sendsRejected}
-                disabled={setEvents.pending}
-                onChange={(e) => void setEvents.run(e.target.checked)}
-              />
-              <span className="mono">payment.rejected</span>
-            </label>
+            {["payment.received", "payment.rejected"].map((type) => {
+              const on = endpoint.eventTypes.includes(type);
+              return (
+                <label className="wh-check" style={{ whiteSpace: "nowrap" }} key={type}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={setEvents.pending || (on && endpoint.eventTypes.length === 1)}
+                    onChange={(e) => void setEvents.run(type, e.target.checked)}
+                  />
+                  <span className="mono">{type}</span>
+                </label>
+              );
+            })}
           </dd>
           <dt>Failed events in a row</dt>
           <dd>{endpoint.consecutiveFailures}</dd>
@@ -408,6 +423,7 @@ function EndpointCard({ endpoint, onChanged }: { endpoint: Endpoint; onChanged: 
         )}
       </div>
       <div className="panel-foot">
+        <CurlButton small path={`/v1/endpoints/${endpoint.id}`} />
         <button className="wh-btn is-sm is-ghost" type="button" onClick={() => setDialog("delete")}>
           <Icon name="trash" size={14} />
           Delete

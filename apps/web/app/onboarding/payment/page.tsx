@@ -14,7 +14,15 @@ import type { PaymentDetail, Watch } from "@/lib/types";
 const FRIENDBOT_URL = "https://lab.stellar.org/account/fund?$=network$id=testnet";
 
 /** The receipt for the first payment: what was checked, and what was sent to the server. */
-export function FirstPaymentReceipt({ payment, watch, endpointUrl }: { payment: PaymentDetail; watch: Watch; endpointUrl: string | undefined }) {
+export function FirstPaymentReceipt({
+  payment,
+  watch,
+  endpointUrl,
+}: {
+  payment: PaymentDetail;
+  watch: Watch;
+  endpointUrl: string | undefined;
+}) {
   const match = payment.matches.find((m) => m.watchId === watch.id) ?? payment.matches[0];
   if (!match) return null;
   const delivery = match.event?.deliveries[0];
@@ -57,7 +65,9 @@ export function FirstPaymentReceipt({ payment, watch, endpointUrl }: { payment: 
         {checks.map(([name, check]) => (
           <div className="r" key={name}>
             <span>{name}</span>
-            <span className={check.passed ? "pass" : "fail"}>{check.passed ? "PASS" : (check.reason ?? "FAIL")}</span>
+            <span className={check.passed ? "pass" : "fail"}>
+              {check.passed ? "PASS" : (check.reason ?? "FAIL")}
+            </span>
           </div>
         ))}
         <hr className="dbl" />
@@ -96,7 +106,10 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
       () => {},
     );
   }, []);
-  const detail = useApi<{ payment: PaymentDetail }>(setup.payment ? `/v1/payments/${setup.payment.id}` : null, ["delivery.updated"]).data?.payment;
+  const detail = useApi<{ payment: PaymentDetail }>(
+    setup.payment ? `/v1/payments/${setup.payment.id}` : null,
+    ["delivery.updated"],
+  ).data?.payment;
   const match = detail?.matches.find((m) => m.watchId === watch.id) ?? detail?.matches[0];
   const delivery = match?.event?.deliveries[0];
   const arrived = setup.payment !== undefined;
@@ -109,7 +122,8 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
         <span className="wz-eyebrow">Step 4 · Payment</span>
         <h1>Now pay your wallet</h1>
         <p className="lede">
-          Send testnet {code} to {name} from a different testnet account. We'll spot it on the ledger, check it against your rules and fire{" "}
+          Send testnet {code} to {name} from a different testnet account. We'll spot it on the
+          ledger, check it against your rules and fire{" "}
           <span className="mono" style={{ color: "var(--ink)" }}>
             payment.received
           </span>
@@ -124,14 +138,26 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
               <span>{amountRuleLong(watch.amountRule, code)}</span>
               <span>{memoRuleLong(watch.memoRule)}</span>
             </div>
-            <button className="wh-btn is-sm" type="button" aria-label="Copy wallet address" onClick={() => void navigator.clipboard.writeText(watch.walletAddress).then(() => setCopied(true))}>
+            <button
+              className="wh-btn is-sm"
+              type="button"
+              aria-label="Copy wallet address"
+              onClick={() =>
+                void navigator.clipboard.writeText(watch.walletAddress).then(() => setCopied(true))
+              }
+            >
               <Icon name={copied ? "check" : "copy"} size={14} />
               {copied ? "Copied" : "Copy address"}
             </button>
           </div>
         </div>
         <div className="wz-ways">
-          <a className="wz-way" href="https://lab.stellar.org/transaction/build?$=network$id=testnet" target="_blank" rel="noopener">
+          <a
+            className="wz-way"
+            href="https://lab.stellar.org/transaction/build?$=network$id=testnet"
+            target="_blank"
+            rel="noopener"
+          >
             <b>
               <Icon name="flask" />
               Stellar Lab
@@ -145,7 +171,12 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
             </b>
             <span>Switch it to Testnet, then send from your test account.</span>
           </a>
-          <a className="wz-way" href="https://developers.stellar.org/docs/build/guides/transactions/send-and-receive-payments" target="_blank" rel="noopener">
+          <a
+            className="wz-way"
+            href="https://developers.stellar.org/docs/build/guides/transactions/send-and-receive-payments"
+            target="_blank"
+            rel="noopener"
+          >
             <b>
               <Icon name="code" />
               From code
@@ -162,7 +193,8 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
               <b>Watching the ledger for your payment…</b>
               <span>
                 {ledger !== null ? `Ledger ${ledger} · ` : ""}
-                {live ? "live, this page updates by itself" : "reconnecting…"} · usually lands within 10 s of sending
+                {live ? "live, this page updates by itself" : "reconnecting…"} · usually lands
+                within 10 s of sending
               </span>
             </div>
           </div>
@@ -170,21 +202,32 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
           <div className="wh-alert is-warn wz-print" role="status">
             <Icon name="alert-triangle" />
             <div className="body">
-              <strong>A payment landed, but it missed your rules.</strong> {match.reasons.join(", ")}. {match.event ? "Your server was told with payment.rejected." : "No webhook is sent for rejected payments on this watch."}
+              <strong>A payment landed, but it missed your rules.</strong>{" "}
+              {match.reasons.join(", ")}.{" "}
+              {match.event
+                ? "Your server was told with payment.rejected."
+                : "No webhook is sent for rejected payments on this watch."}
             </div>
           </div>
         ) : delivery && delivery.status !== "DELIVERED" ? (
           <div className="wh-alert is-warn wz-print" role="status">
             <Icon name="rotate" />
             <div className="body">
-              <strong>Payment verified. The webhook is {delivery.status.toLowerCase()}.</strong> Follow its attempts in <Link href={`/events/view?id=${match?.event?.id ?? ""}`}>Webhook events</Link>.
+              <strong>Payment verified. The webhook is {delivery.status.toLowerCase()}.</strong>{" "}
+              Follow its attempts in{" "}
+              <Link href={`/events/view?id=${match?.event?.id ?? ""}`}>Webhook events</Link>.
             </div>
           </div>
         ) : (
-          <div className="wh-alert is-neutral wz-print" role="status" style={{ background: "var(--ok-soft, #D7F2E5)" }}>
+          <div
+            className="wh-alert is-neutral wz-print"
+            role="status"
+            style={{ background: "var(--ok-soft, #D7F2E5)" }}
+          >
             <Icon name="party" />
             <div className="body">
-              <strong>Payment landed{delivery ? " and your server got the webhook" : ""}.</strong> That's the whole loop working end to end.
+              <strong>Payment landed{delivery ? " and your server got the webhook" : ""}.</strong>{" "}
+              That's the whole loop working end to end.
             </div>
           </div>
         )}
@@ -194,7 +237,10 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
             Back
           </Link>
           <div className="r">
-            <Link className={arrived ? "wh-btn is-primary" : "wh-btn is-ghost"} href="/onboarding/done">
+            <Link
+              className={arrived ? "wh-btn is-primary" : "wh-btn is-ghost"}
+              href="/onboarding/done"
+            >
               {arrived ? "Finish setup" : "I'll do this later"}
               {arrived && <Icon name="arrow-right" />}
             </Link>
@@ -211,7 +257,10 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
                 <Icon name="receipt" size={18} />
                 Your receipt prints here
               </h3>
-              <p>As soon as the payment closes on the ledger, you'll see what we checked and what we sent to your server.</p>
+              <p>
+                As soon as the payment closes on the ledger, you'll see what we checked and what we
+                sent to your server.
+              </p>
               <div className="wh-col" style={{ gap: 8 }}>
                 {["70%", "90%", "55%", "80%"].map((width) => (
                   <span className="wh-skel" style={{ width }} key={width} />
@@ -223,7 +272,10 @@ function PaymentStep({ setup, watch }: { setup: Setup; watch: Watch }) {
                 <Icon name="droplets" size={18} />
                 Need testnet funds?
               </h3>
-              <p>Friendbot gives any new testnet account 10,000 XLM. For testnet USDC, add a trustline and swap some XLM for it.</p>
+              <p>
+                Friendbot gives any new testnet account 10,000 XLM. For testnet USDC, add a
+                trustline and swap some XLM for it.
+              </p>
               <a className="wh-btn is-sm" href={FRIENDBOT_URL} target="_blank" rel="noopener">
                 Fund with Friendbot
                 <Icon name="external-link" size={14} />

@@ -16,7 +16,12 @@ export function LandingMotion() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     document.querySelectorAll<HTMLElement>(".lpr-hero [data-in]").forEach((element, i) => {
-      element.animate([FROM, TO], { duration: 800, delay: i * 90, easing: EASE, fill: "backwards" });
+      element.animate([FROM, TO], {
+        duration: 800,
+        delay: i * 90,
+        easing: EASE,
+        fill: "backwards",
+      });
     });
 
     const pending = [...document.querySelectorAll<HTMLElement>("[data-reveal]")];
@@ -29,7 +34,12 @@ export function LandingMotion() {
             const element = entry.target as HTMLElement;
             observer.unobserve(element);
             element.style.opacity = "";
-            element.animate([FROM, TO], { duration: 700, delay: i * 100, easing: EASE, fill: "backwards" });
+            element.animate([FROM, TO], {
+              duration: 700,
+              delay: i * 100,
+              easing: EASE,
+              fill: "backwards",
+            });
           });
       },
       { rootMargin: "0px 0px -12% 0px" },

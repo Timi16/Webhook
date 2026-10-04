@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/components/icons";
 import { WithId } from "@/components/query";
+import { CurlButton } from "@/components/curl";
 import { Empty, ErrorAlert, PageHead, StatusBadge } from "@/components/ui";
 import { api } from "@/lib/api";
 import { clockTime, relativeTime, shortUrl } from "@/lib/format";
@@ -27,12 +28,29 @@ const ERROR_TEXT: Record<string, string> = {
   INTERNAL: "We couldn't send this attempt",
 };
 
-function attemptView(attempt: Attempt): { tone: "ok" | "bad" | "warn"; icon: IconName; label: string; note: string | null } {
+function attemptView(attempt: Attempt): {
+  tone: "ok" | "bad" | "warn";
+  icon: IconName;
+  label: string;
+  note: string | null;
+} {
   const ok = attempt.statusCode !== null && attempt.statusCode >= 200 && attempt.statusCode < 300;
-  if (ok) return { tone: "ok", icon: "check", label: String(attempt.statusCode), note: attempt.error ? (ERROR_TEXT[attempt.error] ?? attempt.error) : null };
-  if (attempt.error === "TIMEOUT") return { tone: "warn", icon: "timer", label: "timeout", note: ERROR_TEXT.TIMEOUT ?? null };
-  const label = attempt.statusCode !== null ? String(attempt.statusCode) : (attempt.error ?? "error").toLowerCase();
-  const note = attempt.error ? (ERROR_TEXT[attempt.error] ?? attempt.error) : `Server returned ${attempt.statusCode}`;
+  if (ok)
+    return {
+      tone: "ok",
+      icon: "check",
+      label: String(attempt.statusCode),
+      note: attempt.error ? (ERROR_TEXT[attempt.error] ?? attempt.error) : null,
+    };
+  if (attempt.error === "TIMEOUT")
+    return { tone: "warn", icon: "timer", label: "timeout", note: ERROR_TEXT.TIMEOUT ?? null };
+  const label =
+    attempt.statusCode !== null
+      ? String(attempt.statusCode)
+      : (attempt.error ?? "error").toLowerCase();
+  const note = attempt.error
+    ? (ERROR_TEXT[attempt.error] ?? attempt.error)
+    : `Server returned ${attempt.statusCode}`;
   return { tone: "bad", icon: "x", label, note };
 }
 
@@ -51,7 +69,9 @@ function JsonLine({ line }: { line: string }) {
 }
 
 function EventView({ id }: { id: string }) {
-  const detail = useApi<{ event: EventDetail }>(`/v1/events/${encodeURIComponent(id)}`, ["delivery.updated"]);
+  const detail = useApi<{ event: EventDetail }>(`/v1/events/${encodeURIComponent(id)}`, [
+    "delivery.updated",
+  ]);
   const endpoints = useApi<{ data: Endpoint[] }>("/v1/endpoints");
   const [wrap, setWrap] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -70,7 +90,15 @@ function EventView({ id }: { id: string }) {
   const event = detail.data?.event;
   if (detail.error && !event) {
     return detail.error.status === 404 ? (
-      <Empty icon="search" title="Event not found" actions={<Link className="wh-btn" href="/events">Back to webhook events</Link>}>
+      <Empty
+        icon="search"
+        title="Event not found"
+        actions={
+          <Link className="wh-btn" href="/events">
+            Back to webhook events
+          </Link>
+        }
+      >
         The link may be wrong, or the event belongs to another account.
       </Empty>
     ) : (
@@ -82,8 +110,17 @@ function EventView({ id }: { id: string }) {
   const delivery = event.deliveries[0];
   const endpoint = endpoints.data?.data.find((e) => e.id === delivery?.endpointId);
   const json = JSON.stringify(event.payload, null, 2);
-  const payment = (event.payload as { data?: { payment?: { amount?: string; asset?: { code?: string } }; watch?: { label?: string | null } } }).data;
-  const summary = payment?.payment?.amount ? ` · ${payment.payment.amount} ${payment.payment.asset?.code ?? ""}${payment.watch?.label ? ` to ${payment.watch.label}` : ""}` : "";
+  const payment = (
+    event.payload as {
+      data?: {
+        payment?: { amount?: string; asset?: { code?: string } };
+        watch?: { label?: string | null };
+      };
+    }
+  ).data;
+  const summary = payment?.payment?.amount
+    ? ` · ${payment.payment.amount} ${payment.payment.asset?.code ?? ""}${payment.watch?.label ? ` to ${payment.watch.label}` : ""}`
+    : "";
   const left = delivery ? Math.max(0, MAX_ATTEMPTS - delivery.attemptCount) : 0;
 
   return (
@@ -95,7 +132,13 @@ function EventView({ id }: { id: string }) {
         actions={
           <>
             {delivery && <StatusBadge status={delivery.status} />}
-            <button className="wh-btn" type="button" disabled={resend.pending || delivery?.status === "CANCELLED"} onClick={() => void resend.run()}>
+            <CurlButton path={`/v1/events/${event.id}`} />
+            <button
+              className="wh-btn"
+              type="button"
+              disabled={resend.pending || delivery?.status === "CANCELLED"}
+              onClick={() => void resend.run()}
+            >
               <Icon name="send" />
               {resend.pending ? "Queuing…" : "Resend now"}
             </button>
@@ -106,11 +149,21 @@ function EventView({ id }: { id: string }) {
         <div className="wh-alert is-neutral" role="status">
           <Icon name="send" />
           <div className="body">
-            <strong>Queued a new attempt.</strong> It replaces any scheduled retry and keeps the same event ID. Results show in the timeline.
+            <strong>Queued a new attempt.</strong> It replaces any scheduled retry and keeps the
+            same event ID. Results show in the timeline.
           </div>
         </div>
       )}
-      {resend.error && <ErrorAlert error={resend.error} title={resend.error.code === "CONFLICT" ? "This event can't be resent right now." : "Couldn't resend this event."} />}
+      {resend.error && (
+        <ErrorAlert
+          error={resend.error}
+          title={
+            resend.error.code === "CONFLICT"
+              ? "This event can't be resent right now."
+              : "Couldn't resend this event."
+          }
+        />
+      )}
       <dl className="wh-dl">
         <dt>Event</dt>
         <dd>{event.id}</dd>
@@ -121,12 +174,20 @@ function EventView({ id }: { id: string }) {
         <dt>Created</dt>
         <dd>{utc(event.createdAt)}</dd>
         <dt>Endpoint</dt>
-        <dd>{endpoint ? <Link href="/endpoints">{shortUrl(endpoint.url)}</Link> : <span className="muted">deleted endpoint</span>}</dd>
+        <dd>
+          {endpoint ? (
+            <Link href="/endpoints">{shortUrl(endpoint.url)}</Link>
+          ) : (
+            <span className="muted">deleted endpoint</span>
+          )}
+        </dd>
         {event.paymentId && (
           <>
             <dt>Payment</dt>
             <dd>
-              <Link href={`/payments/view?id=${encodeURIComponent(event.paymentId)}`}>{event.paymentId}</Link>
+              <Link href={`/payments/view?id=${encodeURIComponent(event.paymentId)}`}>
+                {event.paymentId}
+              </Link>
             </dd>
           </>
         )}
@@ -140,7 +201,12 @@ function EventView({ id }: { id: string }) {
               payload.json
             </span>
             <span className="wh-row">
-              <button className="wh-btn is-sm is-ghost" type="button" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+              <button
+                className="wh-btn is-sm is-ghost"
+                type="button"
+                aria-pressed={wrap}
+                onClick={() => setWrap(!wrap)}
+              >
                 <Icon name="wrap-text" size={14} />
                 Wrap
               </button>
@@ -157,7 +223,11 @@ function EventView({ id }: { id: string }) {
               </button>
             </span>
           </header>
-          <pre className={wrap ? "wh-json is-wrap" : "wh-json"} tabIndex={0} aria-label="Webhook payload">
+          <pre
+            className={wrap ? "wh-json is-wrap" : "wh-json"}
+            tabIndex={0}
+            aria-label="Webhook payload"
+          >
             {json.split("\n").map((line, index) => (
               <JsonLine key={index} line={line} />
             ))}
@@ -166,10 +236,16 @@ function EventView({ id }: { id: string }) {
         <section className="wh-panel">
           <header>
             <span className="h">Delivery attempts</span>
-            <span className="wh-reason">backoff 30s · 2m · 10m · 30m · 1h · 3h · 6h · 12h · 24h</span>
+            <span className="wh-reason">
+              backoff 30s · 2m · 10m · 30m · 1h · 3h · 6h · 12h · 24h
+            </span>
           </header>
           {!delivery || (delivery.attempts.length === 0 && delivery.status !== "RETRYING") ? (
-            <p className="panel-empty">{delivery?.status === "CANCELLED" ? "Cancelled before it was sent: its endpoint was deleted." : "No attempt yet. The first one is sent within a second or two."}</p>
+            <p className="panel-empty">
+              {delivery?.status === "CANCELLED"
+                ? "Cancelled before it was sent: its endpoint was deleted."
+                : "No attempt yet. The first one is sent within a second or two."}
+            </p>
           ) : (
             <ol className="wh-tl">
               {delivery.attempts.map((attempt) => {
@@ -208,7 +284,8 @@ function EventView({ id }: { id: string }) {
                       <strong>#{delivery.attemptCount + 1}</strong>
                       <span>scheduled {clockTime(delivery.nextAttemptAt)}</span>
                       <span>
-                        {relativeTime(delivery.nextAttemptAt)} · {left} {left === 1 ? "attempt" : "attempts"} left
+                        {relativeTime(delivery.nextAttemptAt)} · {left}{" "}
+                        {left === 1 ? "attempt" : "attempts"} left
                       </span>
                     </div>
                   </div>

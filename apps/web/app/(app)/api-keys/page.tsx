@@ -22,10 +22,28 @@ const EXPIRIES = [
   { label: "1 year", days: 365 },
 ] as const;
 
-export function CreatedKeyModal({ name, secret, onDone }: { name: string; secret: string; onDone: () => void }) {
+export function CreatedKeyModal({
+  name,
+  secret,
+  onDone,
+}: {
+  name: string;
+  secret: string;
+  onDone: () => void;
+}) {
   return (
-    <SecretModal title="Your new API key" label={<>Key for “{name}”</>} secret={secret} onDone={onDone}>
-      Send it as <span className="mono" style={{ color: "var(--ink)" }}>Authorization: Bearer whk_test_…</span>. Store it in your server's environment, never in the browser or a repo. If you lose it, roll the key to get a new one.
+    <SecretModal
+      title="Your new API key"
+      label={<>Key for “{name}”</>}
+      secret={secret}
+      onDone={onDone}
+    >
+      Send it as{" "}
+      <span className="mono" style={{ color: "var(--ink)" }}>
+        Authorization: Bearer whk_test_…
+      </span>
+      . Store it in your server's environment, never in the browser or a repo. If you lose it, roll
+      the key to get a new one.
     </SecretModal>
   );
 }
@@ -42,13 +60,15 @@ function CreateKey({ onClose, onCreated }: { onClose: () => void; onCreated: () 
         body: {
           name: name.trim(),
           scopes,
-          expiresAt: days === null ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString(),
+          expiresAt:
+            days === null ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString(),
         },
       }),
     );
     onCreated();
   });
-  if (created) return <CreatedKeyModal name={created.apiKey.name} secret={created.key} onDone={onClose} />;
+  if (created)
+    return <CreatedKeyModal name={created.apiKey.name} secret={created.key} onDone={onClose} />;
   return (
     <Modal
       wide
@@ -59,7 +79,12 @@ function CreateKey({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           <button className="wh-btn is-ghost" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="wh-btn is-primary" type="button" disabled={!name.trim() || scopes.length === 0 || create.pending} onClick={() => void create.run()}>
+          <button
+            className="wh-btn is-primary"
+            type="button"
+            disabled={!name.trim() || scopes.length === 0 || create.pending}
+            onClick={() => void create.run()}
+          >
             <Icon name="key" />
             {create.pending ? "Creating…" : "Create key"}
           </button>
@@ -68,8 +93,17 @@ function CreateKey({ onClose, onCreated }: { onClose: () => void; onCreated: () 
     >
       <div className="wh-field">
         <label htmlFor="key-name">Name</label>
-        <input id="key-name" className="wh-input" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Payments worker" />
-        <span className="hint">Name it after where it lives, so you know what breaks if you revoke it.</span>
+        <input
+          id="key-name"
+          className="wh-input"
+          maxLength={100}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Payments worker"
+        />
+        <span className="hint">
+          Name it after where it lives, so you know what breaks if you revoke it.
+        </span>
       </div>
       <div className="wh-field">
         <span style={{ font: "600 13px/16px var(--font-sans)" }}>What can it do?</span>
@@ -78,7 +112,15 @@ function CreateKey({ onClose, onCreated }: { onClose: () => void; onCreated: () 
             const on = scopes.includes(scope.value);
             return (
               <label className={on ? "kd-scope is-on" : "kd-scope"} key={scope.value}>
-                <input type="checkbox" checked={on} onChange={() => setScopes(on ? scopes.filter((s) => s !== scope.value) : [...scopes, scope.value])} />
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() =>
+                    setScopes(
+                      on ? scopes.filter((s) => s !== scope.value) : [...scopes, scope.value],
+                    )
+                  }
+                />
                 <span>
                   <b>{scope.value}</b>
                   <span>{scope.label}</span>
@@ -93,7 +135,14 @@ function CreateKey({ onClose, onCreated }: { onClose: () => void; onCreated: () 
         <span style={{ font: "600 13px/16px var(--font-sans)" }}>Expires</span>
         <div className="wz-pills" role="radiogroup" aria-label="Expiry">
           {EXPIRIES.map((option) => (
-            <button type="button" className="wz-pill" role="radio" key={option.label} aria-checked={days === option.days} onClick={() => setDays(option.days)}>
+            <button
+              type="button"
+              className="wz-pill"
+              role="radio"
+              key={option.label}
+              aria-checked={days === option.days}
+              onClick={() => setDays(option.days)}
+            >
               {option.label}
             </button>
           ))}
@@ -135,7 +184,11 @@ export default function ApiKeysPage() {
 
   return (
     <>
-      <PageHead title="API keys" sub="Use these to call the API from your server. Keep them out of client code and git." actions={createButton} />
+      <PageHead
+        title="API keys"
+        sub="Use these to call the API from your server. Keep them out of client code and git."
+        actions={createButton}
+      />
       {keys.error && !keys.data ? (
         <ErrorAlert error={keys.error} title="Couldn't load API keys." onRetry={keys.reload} />
       ) : !keys.data ? (
@@ -147,7 +200,12 @@ export default function ApiKeysPage() {
           actions={
             <>
               {createButton}
-              <a className="wh-btn" href={`${DOCS_URL}/api-reference`} target="_blank" rel="noopener">
+              <a
+                className="wh-btn"
+                href={`${DOCS_URL}/api-reference`}
+                target="_blank"
+                rel="noopener"
+              >
                 <Icon name="book" />
                 Read the API docs
               </a>
@@ -184,11 +242,19 @@ export default function ApiKeysPage() {
                       <span className="scope-chip">{accessLabel(key.scopes)}</span>
                     </td>
                     <td className="muted">{dateTime(key.createdAt)}</td>
-                    <td className="muted">{key.lastUsedAt ? relativeTime(key.lastUsedAt) : "never"}</td>
+                    <td className="muted">
+                      {key.lastUsedAt ? relativeTime(key.lastUsedAt) : "never"}
+                    </td>
                     <td style={{ paddingTop: 8, paddingBottom: 8 }}>
                       <StatusBadge status={state.status} />
-                      {state.endsAt && <div className="wh-reason">rolled · works until {dateTime(state.endsAt)}</div>}
-                      {state.status === "ACTIVE" && !state.endsAt && key.expiresAt && <div className="wh-reason">expires {dateTime(key.expiresAt)}</div>}
+                      {state.endsAt && (
+                        <div className="wh-reason">
+                          rolled · works until {dateTime(state.endsAt)}
+                        </div>
+                      )}
+                      {state.status === "ACTIVE" && !state.endsAt && key.expiresAt && (
+                        <div className="wh-reason">expires {dateTime(key.expiresAt)}</div>
+                      )}
                     </td>
                     <td className="num">
                       <span className="key-actions">
@@ -197,11 +263,19 @@ export default function ApiKeysPage() {
                           Manage
                         </Link>
                         {state.status === "ACTIVE" ? (
-                          <button className="wh-btn is-sm is-danger" type="button" onClick={() => setConfirm({ key, permanent: false })}>
+                          <button
+                            className="wh-btn is-sm is-danger"
+                            type="button"
+                            onClick={() => setConfirm({ key, permanent: false })}
+                          >
                             Revoke
                           </button>
                         ) : (
-                          <button className="wh-btn is-sm is-danger" type="button" onClick={() => setConfirm({ key, permanent: true })}>
+                          <button
+                            className="wh-btn is-sm is-danger"
+                            type="button"
+                            onClick={() => setConfirm({ key, permanent: true })}
+                          >
                             <Icon name="trash" size={14} />
                             Delete
                           </button>
@@ -217,7 +291,9 @@ export default function ApiKeysPage() {
             {rows.map((key) => (
               <Link href={href(key)} key={key.id}>
                 <div className="top">
-                  <span style={{ fontFamily: "var(--font-sans)", fontWeight: 600 }}>{key.name}</span>
+                  <span style={{ fontFamily: "var(--font-sans)", fontWeight: 600 }}>
+                    {key.name}
+                  </span>
                   <StatusBadge status={keyState(key).status} />
                 </div>
                 <dl>
@@ -240,10 +316,19 @@ export default function ApiKeysPage() {
           onClose={() => setConfirm(undefined)}
           footer={
             <>
-              <button className="wh-btn is-ghost" type="button" onClick={() => setConfirm(undefined)}>
+              <button
+                className="wh-btn is-ghost"
+                type="button"
+                onClick={() => setConfirm(undefined)}
+              >
                 {confirm.permanent ? "Cancel" : "Keep key"}
               </button>
-              <button className="wh-btn is-danger" type="button" disabled={remove.pending} onClick={() => void remove.run(confirm.key, confirm.permanent)}>
+              <button
+                className="wh-btn is-danger"
+                type="button"
+                disabled={remove.pending}
+                onClick={() => void remove.run(confirm.key, confirm.permanent)}
+              >
                 {confirm.permanent ? "Delete key" : "Revoke key"}
               </button>
             </>
@@ -251,10 +336,14 @@ export default function ApiKeysPage() {
         >
           <p className="hint" style={{ color: "var(--ink)" }}>
             {confirm.permanent ? (
-              <>It no longer works. Deleting removes it from this list along with its request history. You can't undo this.</>
+              <>
+                It no longer works. Deleting removes it from this list along with its request
+                history. The audit log in Settings keeps a record. You can't undo this.
+              </>
             ) : (
               <>
-                Requests using <span className="mono">{confirm.key.prefix}…</span> start failing with 401 straight away, so whatever uses it will break. You can't undo this.
+                Requests using <span className="mono">{confirm.key.prefix}…</span> start failing
+                with 401 straight away, so whatever uses it will break. You can't undo this.
               </>
             )}
           </p>

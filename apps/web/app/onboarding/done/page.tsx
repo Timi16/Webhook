@@ -92,7 +92,9 @@ export default function DonePage() {
               )}
               <div className="r">
                 <span>03 TEST WEBHOOK</span>
-                <span className={test ? "pass" : "fail"}>{test ? `${test.statusCode} OK` : "SKIPPED"}</span>
+                <span className={test ? "pass" : "fail"}>
+                  {test ? `${test.statusCode} OK` : "SKIPPED"}
+                </span>
               </div>
               {test && (
                 <div className="r">
@@ -102,7 +104,9 @@ export default function DonePage() {
               )}
               <div className="r">
                 <span>04 FIRST PAYMENT</span>
-                <span className={outcome === "VERIFIED" ? "pass" : "fail"}>{outcome ?? (payment ? "SEEN" : "WAITING")}</span>
+                <span className={outcome === "VERIFIED" ? "pass" : "fail"}>
+                  {outcome ?? (payment ? "SEEN" : "WAITING")}
+                </span>
               </div>
               <hr className="dbl" />
               {payment && (
@@ -117,7 +121,9 @@ export default function DonePage() {
                 </>
               )}
               <div className="c">
-                <span className="hl">{complete ? "*** ALL SYSTEMS GO ***" : `*** ${doneCount} OF 4 DONE ***`}</span>
+                <span className="hl">
+                  {complete ? "*** ALL SYSTEMS GO ***" : `*** ${doneCount} OF 4 DONE ***`}
+                </span>
               </div>
             </div>
           </div>
@@ -133,21 +139,27 @@ export default function DonePage() {
               <Icon name="list-checks" size={20} />
             </span>
             <b>Tighten your rules</b>
-            <span>Require a memo, set an amount range, or only accept payments from known senders.</span>
+            <span>
+              Require a memo, set an amount range, or only accept payments from known senders.
+            </span>
           </Link>
           <Link href="/api-keys">
             <span className="ico">
               <Icon name="key" size={20} />
             </span>
             <b>Create an API key</b>
-            <span>Manage watches and read payments from your own code instead of the dashboard.</span>
+            <span>
+              Manage watches and read payments from your own code instead of the dashboard.
+            </span>
           </Link>
           <Link href="/events">
             <span className="ico">
               <Icon name="send" size={20} />
             </span>
             <b>See your webhook events</b>
-            <span>Every delivery attempt, with status codes, latency and the response your server sent.</span>
+            <span>
+              Every delivery attempt, with status codes, latency and the response your server sent.
+            </span>
           </Link>
         </div>
       </section>

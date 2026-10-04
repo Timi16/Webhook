@@ -9,7 +9,12 @@ import { ErrorAlert } from "./ui";
 
 const STEPS = [
   { key: "wallet", href: "/onboarding/wallet", title: "Add a wallet", sub: "The address we watch" },
-  { key: "endpoint", href: "/onboarding/endpoint", title: "Set your endpoint", sub: "Where webhooks go" },
+  {
+    key: "endpoint",
+    href: "/onboarding/endpoint",
+    title: "Set your endpoint",
+    sub: "Where webhooks go",
+  },
   { key: "test", href: "/onboarding/test", title: "Send a test", sub: "Prove it works" },
   { key: "payment", href: "/onboarding/payment", title: "Make a payment", sub: "Watch one land" },
 ] as const;
@@ -52,7 +57,9 @@ export function SetupFrame({
                 return (
                   <li key={s.key} className={current ? "is-current" : done ? "is-done" : "is-todo"}>
                     <Link href={s.href} aria-current={current ? "step" : undefined}>
-                      <span className="n">{done ? <Icon name="check" className="ic-b" /> : i + 1}</span>
+                      <span className="n">
+                        {done ? <Icon name="check" className="ic-b" /> : i + 1}
+                      </span>
                       <span className="t">
                         <b>{s.title}</b>
                         <span>{done ? "Done" : s.sub}</span>
@@ -65,7 +72,11 @@ export function SetupFrame({
           </nav>
         )}
         {setup.error && !setup.ready ? (
-          <ErrorAlert error={setup.error} title="Couldn't load your setup." onRetry={setup.reload} />
+          <ErrorAlert
+            error={setup.error}
+            title="Couldn't load your setup."
+            onRetry={setup.reload}
+          />
         ) : !setup.ready ? (
           <div aria-busy="true" style={{ minHeight: 320 }} />
         ) : (
@@ -83,7 +94,12 @@ export function JsonBlock({ value, label }: { value: unknown; label: string }) {
       className="wh-json"
       tabIndex={0}
       aria-label={label}
-      style={{ maxHeight: 240, border: "2px solid var(--rule)", borderRadius: 14, background: "var(--paper)" }}
+      style={{
+        maxHeight: 240,
+        border: "2px solid var(--rule)",
+        borderRadius: 14,
+        background: "var(--paper)",
+      }}
     >
       {JSON.stringify(value, null, 2)
         .split("\n")

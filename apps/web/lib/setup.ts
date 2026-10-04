@@ -59,7 +59,11 @@ export function draftAsset(wallet: WalletDraft) {
 }
 
 /** The request that turns step 1's answers into a watch. */
-export function watchBody(wallet: WalletDraft, endpointId: string, notifyRejected: boolean) {
+export function watchBody(
+  wallet: WalletDraft,
+  endpointId: string,
+  eventTypes: string[] = ["payment.received", "payment.rejected"],
+) {
   return {
     label: wallet.label.trim() || null,
     walletAddress: wallet.address,
@@ -68,7 +72,7 @@ export function watchBody(wallet: WalletDraft, endpointId: string, notifyRejecte
     amountRule: wallet.minAmount ? { kind: "min", amount: wallet.minAmount } : { kind: "any" },
     memoRule: { kind: "any" },
     senderAllowlist: [],
-    eventTypes: notifyRejected ? ["payment.received", "payment.rejected"] : ["payment.received"],
+    eventTypes,
   };
 }
 

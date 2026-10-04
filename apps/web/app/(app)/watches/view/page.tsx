@@ -7,7 +7,16 @@ import { Icon } from "@/components/icons";
 import { Modal } from "@/components/modal";
 import { WithId } from "@/components/query";
 import { TrustStatus } from "@/components/trust";
-import { Amount, CopyButton, Empty, ErrorAlert, PageHead, StatusBadge } from "@/components/ui";
+import { CurlButton } from "@/components/curl";
+import {
+  Amount,
+  CopyButton,
+  Empty,
+  ExplorerLink,
+  ErrorAlert,
+  PageHead,
+  StatusBadge,
+} from "@/components/ui";
 import { useAccounts } from "@/lib/accounts";
 import { api } from "@/lib/api";
 import { dateTime, percent, shortAddress, shortUrl } from "@/lib/format";
@@ -73,6 +82,7 @@ function WatchDetail({ id }: { id: string }) {
         actions={
           <>
             <StatusBadge status={watch.active ? "ACTIVE" : "PAUSED"} />
+            <CurlButton path={`/v1/watches/${id}`} />
             <button
               className="wh-btn"
               type="button"
@@ -117,6 +127,7 @@ function WatchDetail({ id }: { id: string }) {
             <dd>
               {watch.walletAddress}{" "}
               <CopyButton value={watch.walletAddress} label="Copy wallet address" />
+              <ExplorerLink address={watch.walletAddress} />
             </dd>
             <dt>Trustline</dt>
             <dd>

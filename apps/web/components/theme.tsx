@@ -1,12 +1,16 @@
 "use client";
 
+import { ToastProvider } from "./toast";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export type ThemeChoice = "system" | "light" | "dark";
 type Theme = "light" | "dark";
 const STORAGE_KEY = "webhook-theme";
 
-const ThemeContext = createContext<{ choice: ThemeChoice; setChoice: (choice: ThemeChoice) => void }>({
+const ThemeContext = createContext<{
+  choice: ThemeChoice;
+  setChoice: (choice: ThemeChoice) => void;
+}>({
   choice: "system",
   setChoice: () => {},
 });
@@ -48,7 +52,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={{ choice, setChoice }}>
       <div className="app" data-theme={choice === "system" ? system : choice}>
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </div>
     </ThemeContext.Provider>
   );

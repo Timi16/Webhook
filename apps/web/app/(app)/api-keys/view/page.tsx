@@ -48,13 +48,21 @@ function Usage({ usage }: { usage: ApiKeyDetail["usage"] }) {
             <span>median</span>
           </div>
         </div>
-        <div className="kd-usage" role="img" aria-label={`Requests per hour over the last 24 hours: ${usage.requests} in total, ${usage.errors} with errors.`}>
+        <div
+          className="kd-usage"
+          role="img"
+          aria-label={`Requests per hour over the last 24 hours: ${usage.requests} in total, ${usage.errors} with errors.`}
+        >
           {usage.hourly.map((hour, i) => (
             <i
               key={hour.hour}
               className={hour.errors > 0 ? "err" : undefined}
               title={`${clockTime(hour.hour).slice(0, 5)} · ${hour.requests} requests, ${hour.errors} errors`}
-              style={{ height: `${hour.requests === 0 ? 2 : Math.max(6, Math.round((hour.requests / peak) * 100))}%`, animationDelay: `${i * 20}ms`, opacity: hour.requests === 0 ? 0.35 : undefined }}
+              style={{
+                height: `${hour.requests === 0 ? 2 : Math.max(6, Math.round((hour.requests / peak) * 100))}%`,
+                animationDelay: `${i * 20}ms`,
+                opacity: hour.requests === 0 ? 0.35 : undefined,
+              }}
             />
           ))}
         </div>
@@ -86,7 +94,8 @@ function KeyDetail({ id }: { id: string }) {
     setScopes(key.scopes);
   }, [loaded]);
 
-  const patch = (body: Record<string, unknown>) => api(`/v1/api-keys/${id}`, { method: "PATCH", body });
+  const patch = (body: Record<string, unknown>) =>
+    api(`/v1/api-keys/${id}`, { method: "PATCH", body });
   const saveDetails = useAction(async () => {
     await patch({ name: name.trim(), note: note.trim() || null });
     setSaved("details");
@@ -103,7 +112,9 @@ function KeyDetail({ id }: { id: string }) {
     detail.reload();
   });
   const roll = useAction(async () => {
-    setRolled(await api<{ apiKey: ApiKey; key: string }>(`/v1/api-keys/${id}/roll`, { method: "POST" }));
+    setRolled(
+      await api<{ apiKey: ApiKey; key: string }>(`/v1/api-keys/${id}/roll`, { method: "POST" }),
+    );
     setDialog(undefined);
   });
   const remove = useAction(async (permanent: boolean) => {
@@ -115,7 +126,15 @@ function KeyDetail({ id }: { id: string }) {
 
   if (detail.error && !detail.data) {
     return detail.error.status === 404 ? (
-      <Empty icon="search" title="Key not found" actions={<Link className="wh-btn" href="/api-keys">Back to API keys</Link>}>
+      <Empty
+        icon="search"
+        title="Key not found"
+        actions={
+          <Link className="wh-btn" href="/api-keys">
+            Back to API keys
+          </Link>
+        }
+      >
         It may have been deleted, or the link is wrong.
       </Empty>
     ) : (
@@ -155,7 +174,8 @@ function KeyDetail({ id }: { id: string }) {
         <div className="wh-alert is-neutral" role="status">
           <Icon name={state.status === "EXPIRED" ? "clock" : "circle-off"} />
           <div className="body">
-            <strong>This key {state.status === "EXPIRED" ? "has expired" : "is revoked"}.</strong> Requests that use it get 401. You can still read its history, or delete it.
+            <strong>This key {state.status === "EXPIRED" ? "has expired" : "is revoked"}.</strong>{" "}
+            Requests that use it get 401. You can still read its history, or delete it.
           </div>
         </div>
       )}
@@ -163,7 +183,8 @@ function KeyDetail({ id }: { id: string }) {
         <div className="wh-alert is-warn" role="status">
           <Icon name="rotate" />
           <div className="body">
-            <strong>This key was rolled.</strong> It keeps working until {dateTime(state.endsAt)}. Deploy its replacement before then.
+            <strong>This key was rolled.</strong> It keeps working until {dateTime(state.endsAt)}.
+            Deploy its replacement before then.
           </div>
         </div>
       )}
@@ -179,7 +200,14 @@ function KeyDetail({ id }: { id: string }) {
                 <>
                   <div className="wh-field">
                     <label htmlFor="key-name">Name</label>
-                    <input id="key-name" className="wh-input" maxLength={100} value={name} aria-invalid={!name.trim() ? true : undefined} onChange={(e) => setName(e.target.value)} />
+                    <input
+                      id="key-name"
+                      className="wh-input"
+                      maxLength={100}
+                      value={name}
+                      aria-invalid={!name.trim() ? true : undefined}
+                      onChange={(e) => setName(e.target.value)}
+                    />
                     {!name.trim() && (
                       <span className="wh-help is-bad">
                         <Icon name="alert-circle" />A key needs a name.
@@ -193,10 +221,22 @@ function KeyDetail({ id }: { id: string }) {
                         (optional)
                       </span>
                     </label>
-                    <input id="key-note" className="wh-input" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Where it's deployed, who owns it" />
+                    <input
+                      id="key-note"
+                      className="wh-input"
+                      maxLength={200}
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Where it's deployed, who owns it"
+                    />
                   </div>
                   <div className="wz-inline">
-                    <button className="wh-btn is-primary" type="button" disabled={!name.trim() || !detailsChanged || saveDetails.pending} onClick={() => void saveDetails.run()}>
+                    <button
+                      className="wh-btn is-primary"
+                      type="button"
+                      disabled={!name.trim() || !detailsChanged || saveDetails.pending}
+                      onClick={() => void saveDetails.run()}
+                    >
                       <Icon name="save" />
                       Save changes
                     </button>
@@ -212,10 +252,15 @@ function KeyDetail({ id }: { id: string }) {
                       Undo
                     </button>
                   </div>
-                  {saveDetails.error && <ErrorAlert error={saveDetails.error} title="Couldn't save this key." />}
+                  {saveDetails.error && (
+                    <ErrorAlert error={saveDetails.error} title="Couldn't save this key." />
+                  )}
                 </>
               ) : (
-                <dl className="wh-dl is-plain" style={{ gridTemplateColumns: "120px minmax(0, 1fr)" }}>
+                <dl
+                  className="wh-dl is-plain"
+                  style={{ gridTemplateColumns: "120px minmax(0, 1fr)" }}
+                >
                   <dt>Name</dt>
                   <dd style={{ fontFamily: "var(--font-sans)" }}>{key.name}</dd>
                   <dt>Note</dt>
@@ -234,14 +279,25 @@ function KeyDetail({ id }: { id: string }) {
               {active ? (
                 <>
                   <p className="hint" style={{ margin: 0 }}>
-                    Give each key only what its job needs. Changes apply to the next request. Every key can list your watches and endpoints.
+                    Give each key only what its job needs. Changes apply to the next request. Every
+                    key can list your watches and endpoints.
                   </p>
                   <div className="kd-scopes">
                     {SCOPES.map((scope) => {
                       const on = scopes.includes(scope.value);
                       return (
                         <label className={on ? "kd-scope is-on" : "kd-scope"} key={scope.value}>
-                          <input type="checkbox" checked={on} onChange={() => setScopes(on ? scopes.filter((s) => s !== scope.value) : [...scopes, scope.value])} />
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() =>
+                              setScopes(
+                                on
+                                  ? scopes.filter((s) => s !== scope.value)
+                                  : [...scopes, scope.value],
+                              )
+                            }
+                          />
                           <span>
                             <b>{scope.value}</b>
                             <span>{scope.label}</span>
@@ -257,12 +313,19 @@ function KeyDetail({ id }: { id: string }) {
                     </div>
                   )}
                   <div className="wz-inline">
-                    <button className="wh-btn" type="button" disabled={scopes.length === 0 || !scopesChanged || saveScopes.pending} onClick={() => void saveScopes.run()}>
+                    <button
+                      className="wh-btn"
+                      type="button"
+                      disabled={scopes.length === 0 || !scopesChanged || saveScopes.pending}
+                      onClick={() => void saveScopes.run()}
+                    >
                       <Icon name="save" />
                       Save permissions
                     </button>
                   </div>
-                  {saveScopes.error && <ErrorAlert error={saveScopes.error} title="Couldn't save the permissions." />}
+                  {saveScopes.error && (
+                    <ErrorAlert error={saveScopes.error} title="Couldn't save the permissions." />
+                  )}
                 </>
               ) : (
                 <div className="kd-ro">
@@ -279,7 +342,13 @@ function KeyDetail({ id }: { id: string }) {
           <section className="wh-panel">
             <header>
               <span className="h">Allowed IPs</span>
-              <span className="wh-reason">{key.allowedIps.length === 0 ? "any IP" : key.allowedIps.length === 1 ? "1 rule" : `${key.allowedIps.length} rules`}</span>
+              <span className="wh-reason">
+                {key.allowedIps.length === 0
+                  ? "any IP"
+                  : key.allowedIps.length === 1
+                    ? "1 rule"
+                    : `${key.allowedIps.length} rules`}
+              </span>
             </header>
             <div className="panel-body">
               <p className="hint" style={{ margin: 0 }}>
@@ -291,7 +360,13 @@ function KeyDetail({ id }: { id: string }) {
                     <span className="kd-ip" key={ip}>
                       {ip}
                       {active && (
-                        <button className="wh-copy" type="button" aria-label={`Remove ${ip}`} disabled={saveIps.pending} onClick={() => void saveIps.run(key.allowedIps.filter((x) => x !== ip))}>
+                        <button
+                          className="wh-copy"
+                          type="button"
+                          aria-label={`Remove ${ip}`}
+                          disabled={saveIps.pending}
+                          onClick={() => void saveIps.run(key.allowedIps.filter((x) => x !== ip))}
+                        >
                           <Icon name="x" size={14} />
                         </button>
                       )}
@@ -317,7 +392,12 @@ function KeyDetail({ id }: { id: string }) {
                         if (e.key === "Enter") addIp();
                       }}
                     />
-                    <button className="wh-btn" type="button" disabled={saveIps.pending} onClick={addIp}>
+                    <button
+                      className="wh-btn"
+                      type="button"
+                      disabled={saveIps.pending}
+                      onClick={addIp}
+                    >
                       <Icon name="plus" />
                       Add IP
                     </button>
@@ -325,10 +405,14 @@ function KeyDetail({ id }: { id: string }) {
                   {ipError && (
                     <div className="wh-help is-bad" role="alert">
                       <Icon name="alert-circle" />
-                      <span>Enter an IPv4 address or CIDR range, like 203.0.113.7 or 203.0.113.0/24.</span>
+                      <span>
+                        Enter an IPv4 address or CIDR range, like 203.0.113.7 or 203.0.113.0/24.
+                      </span>
                     </div>
                   )}
-                  {saveIps.error && <ErrorAlert error={saveIps.error} title="Couldn't save the allowed IPs." />}
+                  {saveIps.error && (
+                    <ErrorAlert error={saveIps.error} title="Couldn't save the allowed IPs." />
+                  )}
                 </>
               )}
             </div>
@@ -358,11 +442,17 @@ function KeyDetail({ id }: { id: string }) {
                           {clockTime(request.at)}
                         </td>
                         <td>
-                          <span className={`kd-method ${METHOD_CLASS[request.method] ?? ""}`}>{request.method}</span>
+                          <span className={`kd-method ${METHOD_CLASS[request.method] ?? ""}`}>
+                            {request.method}
+                          </span>
                         </td>
                         <td style={{ overflowWrap: "anywhere" }}>{request.path}</td>
                         <td>
-                          <span className={request.status >= 400 ? "wh-badge is-bad" : "wh-badge is-ok"}>{request.status}</span>
+                          <span
+                            className={request.status >= 400 ? "wh-badge is-bad" : "wh-badge is-ok"}
+                          >
+                            {request.status}
+                          </span>
                         </td>
                         <td className="muted">{request.ip ?? "—"}</td>
                       </tr>
@@ -376,7 +466,11 @@ function KeyDetail({ id }: { id: string }) {
                         <span className="mono" style={{ overflowWrap: "anywhere" }}>
                           {request.method} {request.path}
                         </span>
-                        <span className={request.status >= 400 ? "wh-badge is-bad" : "wh-badge is-ok"}>{request.status}</span>
+                        <span
+                          className={request.status >= 400 ? "wh-badge is-bad" : "wh-badge is-ok"}
+                        >
+                          {request.status}
+                        </span>
                       </div>
                       <span className="fine">
                         {clockTime(request.at)} · {request.ip ?? "—"}
@@ -393,7 +487,10 @@ function KeyDetail({ id }: { id: string }) {
           <div className={active ? "kd-key" : "kd-key is-revoked"}>
             <span className="k">Secret key</span>
             <code>{key.prefix}••••••••••••••••••••</code>
-            <p>We only show a full key once, when it's created. Lost it? Roll the key to get a new one.</p>
+            <p>
+              We only show a full key once, when it's created. Lost it? Roll the key to get a new
+              one.
+            </p>
             <dl>
               <dt>Key ID</dt>
               <dd>
@@ -419,9 +516,16 @@ function KeyDetail({ id }: { id: string }) {
                   <div className="row">
                     <div>
                       <b>Roll key</b>
-                      <span>Get a new secret. The old one keeps working for 24 hours so you can deploy.</span>
+                      <span>
+                        Get a new secret. The old one keeps working for 24 hours so you can deploy.
+                      </span>
                     </div>
-                    <button className="wh-btn is-sm" type="button" disabled={state.endsAt !== null} onClick={() => setDialog("roll")}>
+                    <button
+                      className="wh-btn is-sm"
+                      type="button"
+                      disabled={state.endsAt !== null}
+                      onClick={() => setDialog("roll")}
+                    >
                       <Icon name="rotate" size={14} />
                       Roll
                     </button>
@@ -431,7 +535,11 @@ function KeyDetail({ id }: { id: string }) {
                       <b>Revoke key</b>
                       <span>Stops it working immediately. Keeps its history.</span>
                     </div>
-                    <button className="wh-btn is-sm is-danger" type="button" onClick={() => setDialog("revoke")}>
+                    <button
+                      className="wh-btn is-sm is-danger"
+                      type="button"
+                      onClick={() => setDialog("revoke")}
+                    >
                       Revoke
                     </button>
                   </div>
@@ -440,9 +548,15 @@ function KeyDetail({ id }: { id: string }) {
               <div className="row">
                 <div>
                   <b>Delete key</b>
-                  <span>Revokes it if needed and removes it and its history from your account.</span>
+                  <span>
+                    Revokes it if needed and removes it and its history from your account.
+                  </span>
                 </div>
-                <button className="wh-btn is-sm is-danger" type="button" onClick={() => setDialog("delete")}>
+                <button
+                  className="wh-btn is-sm is-danger"
+                  type="button"
+                  onClick={() => setDialog("delete")}
+                >
                   <Icon name="trash" size={14} />
                   Delete
                 </button>
@@ -461,15 +575,23 @@ function KeyDetail({ id }: { id: string }) {
               <button className="wh-btn is-ghost" type="button" onClick={close}>
                 Keep key
               </button>
-              <button className="wh-btn is-danger" type="button" disabled={remove.pending} onClick={() => void remove.run(false)}>
+              <button
+                className="wh-btn is-danger"
+                type="button"
+                disabled={remove.pending}
+                onClick={() => void remove.run(false)}
+              >
                 Revoke key
               </button>
             </>
           }
         >
           <p className="hint" style={{ color: "var(--ink)" }}>
-            Requests using <span className="mono">{key.prefix}…</span> start failing with 401 straight away.{" "}
-            {usage.requests > 0 ? `It made ${usage.requests.toLocaleString("en-GB")} ${usage.requests === 1 ? "request" : "requests"} in the last 24 hours, so whatever uses it will break. ` : ""}
+            Requests using <span className="mono">{key.prefix}…</span> start failing with 401
+            straight away.{" "}
+            {usage.requests > 0
+              ? `It made ${usage.requests.toLocaleString("en-GB")} ${usage.requests === 1 ? "request" : "requests"} in the last 24 hours, so whatever uses it will break. `
+              : ""}
             You can't undo this.
           </p>
           {remove.error && <ErrorAlert error={remove.error} title="Couldn't revoke this key." />}
@@ -484,7 +606,12 @@ function KeyDetail({ id }: { id: string }) {
               <button className="wh-btn is-ghost" type="button" onClick={close}>
                 Cancel
               </button>
-              <button className="wh-btn is-primary" type="button" disabled={roll.pending} onClick={() => void roll.run()}>
+              <button
+                className="wh-btn is-primary"
+                type="button"
+                disabled={roll.pending}
+                onClick={() => void roll.run()}
+              >
                 <Icon name="rotate" />
                 Roll key
               </button>
@@ -493,9 +620,14 @@ function KeyDetail({ id }: { id: string }) {
         >
           <dl className="wh-dl is-plain" style={{ gridTemplateColumns: "110px minmax(0, 1fr)" }}>
             <dt>Now</dt>
-            <dd style={{ fontFamily: "var(--font-sans)" }}>You get a new secret, shown once, with the same permissions and IP rules. Both old and new work.</dd>
+            <dd style={{ fontFamily: "var(--font-sans)" }}>
+              You get a new secret, shown once, with the same permissions and IP rules. Both old and
+              new work.
+            </dd>
             <dt>+24 hours</dt>
-            <dd style={{ fontFamily: "var(--font-sans)" }}>The old secret stops working. Deploy the new one before then.</dd>
+            <dd style={{ fontFamily: "var(--font-sans)" }}>
+              The old secret stops working. Deploy the new one before then.
+            </dd>
           </dl>
           {roll.error && <ErrorAlert error={roll.error} title="Couldn't roll this key." />}
         </Modal>
@@ -509,7 +641,12 @@ function KeyDetail({ id }: { id: string }) {
               <button className="wh-btn is-ghost" type="button" onClick={close}>
                 Cancel
               </button>
-              <button className="wh-btn is-danger" type="button" disabled={typed !== key.name || remove.pending} onClick={() => void remove.run(true)}>
+              <button
+                className="wh-btn is-danger"
+                type="button"
+                disabled={typed !== key.name || remove.pending}
+                onClick={() => void remove.run(true)}
+              >
                 <Icon name="trash" />
                 Delete key
               </button>
@@ -517,13 +654,20 @@ function KeyDetail({ id }: { id: string }) {
           }
         >
           <p className="hint" style={{ color: "var(--ink)" }}>
-            This revokes the key if it's still active and removes it and its request history. You can't undo this.
+            This revokes the key if it's still active and removes it and its request history. The
+            audit log in Settings keeps a record. You can't undo this.
           </p>
           <div className="wh-field">
             <label htmlFor="delete-confirm">
               Type <span className="mono">{key.name}</span> to confirm
             </label>
-            <input id="delete-confirm" className="wh-input" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={key.name} />
+            <input
+              id="delete-confirm"
+              className="wh-input"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={key.name}
+            />
           </div>
           {remove.error && <ErrorAlert error={remove.error} title="Couldn't delete this key." />}
         </Modal>

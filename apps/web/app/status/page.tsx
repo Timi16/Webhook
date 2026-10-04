@@ -38,11 +38,30 @@ const DAY: Record<Day["status"], { tone: string; label: string }> = {
   major_outage: { tone: "d-major", label: "Major outage" },
   no_data: { tone: "d-none", label: "No data" },
 };
-const LEGEND: Day["status"][] = ["operational", "degraded", "partial_outage", "major_outage", "no_data"];
+const LEGEND: Day["status"][] = [
+  "operational",
+  "degraded",
+  "partial_outage",
+  "major_outage",
+  "no_data",
+];
 
 function dayLabel(date: string): string {
   const [year, month, day] = date.split("-");
-  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const names = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   return `${parseInt(day ?? "", 10)} ${names[parseInt(month ?? "", 10) - 1] ?? ""} ${year}`;
 }
 
@@ -74,7 +93,11 @@ function ComponentRow({ component }: { component: Component }) {
       <div className="st-foot">
         <span>90 days ago</span>
         <hr />
-        <span>{component.uptimePercent === null ? "no data yet" : `${component.uptimePercent.toFixed(2)} % uptime`}</span>
+        <span>
+          {component.uptimePercent === null
+            ? "no data yet"
+            : `${component.uptimePercent.toFixed(2)} % uptime`}
+        </span>
         <hr />
         <span>Today</span>
       </div>
@@ -98,8 +121,14 @@ export default function StatusPage() {
 
   const data = status.data;
   const unreachable = status.error !== undefined && !data;
-  const overall = unreachable ? { tone: "is-bad", icon: "alert-circle" as IconName, title: "We can't reach the service" } : data ? OVERALL[data.status] : { tone: "is-none", icon: "clock" as IconName, title: "Checking…" };
-  const firstMeasured = data?.components.flatMap((c) => c.days.filter((d) => d.status !== "no_data").map((d) => d.date)).sort()[0];
+  const overall = unreachable
+    ? { tone: "is-bad", icon: "alert-circle" as IconName, title: "We can't reach the service" }
+    : data
+      ? OVERALL[data.status]
+      : { tone: "is-none", icon: "clock" as IconName, title: "Checking…" };
+  const firstMeasured = data?.components
+    .flatMap((c) => c.days.filter((d) => d.status !== "no_data").map((d) => d.date))
+    .sort()[0];
 
   return (
     <>
@@ -131,7 +160,8 @@ export default function StatusPage() {
 
         {unreachable ? (
           <p className="hint" style={{ fontSize: 14 }}>
-            The API didn't answer, so there is nothing to show yet. Payments that land meanwhile are not lost: every missed ledger is caught up in order once it is back.
+            The API didn't answer, so there is nothing to show yet. Payments that land meanwhile are
+            not lost: every missed ledger is caught up in order once it is back.
           </p>
         ) : (
           data && (
@@ -139,7 +169,9 @@ export default function StatusPage() {
               <div className="st-meta">
                 <span>
                   Uptime over the past 90 days
-                  {firstMeasured ? `, measured every minute since ${dayLabel(firstMeasured)}.` : ". Measuring starts with the first check."}
+                  {firstMeasured
+                    ? `, measured every minute since ${dayLabel(firstMeasured)}.`
+                    : ". Measuring starts with the first check."}
                 </span>
               </div>
               <section className="st-list" aria-label="Components">
@@ -158,10 +190,15 @@ export default function StatusPage() {
               {health.data && (
                 <div className="result" role="status">
                   <span>
-                    last ledger seen <strong style={{ color: "var(--ink)" }}>{health.data.lastLedger ?? "—"}</strong>
+                    last ledger seen{" "}
+                    <strong style={{ color: "var(--ink)" }}>{health.data.lastLedger ?? "—"}</strong>
                   </span>
-                  {health.data.lagSeconds !== null && <span>{health.data.lagSeconds} s behind the network</span>}
-                  {health.data.dueDeliveries !== null && <span>{health.data.dueDeliveries} webhooks waiting to send</span>}
+                  {health.data.lagSeconds !== null && (
+                    <span>{health.data.lagSeconds} s behind the network</span>
+                  )}
+                  {health.data.dueDeliveries !== null && (
+                    <span>{health.data.dueDeliveries} webhooks waiting to send</span>
+                  )}
                 </div>
               )}
             </>
@@ -169,11 +206,23 @@ export default function StatusPage() {
         )}
 
         <footer className="st-links">
-          <button className="wh-btn is-sm" type="button" onClick={() => { reloadStatus(); reloadHealth(); }}>
+          <button
+            className="wh-btn is-sm"
+            type="button"
+            onClick={() => {
+              reloadStatus();
+              reloadHealth();
+            }}
+          >
             <Icon name="rotate" size={14} />
             Check again
           </button>
-          <a className="wh-btn is-sm is-ghost" href="https://status.stellar.org" target="_blank" rel="noopener">
+          <a
+            className="wh-btn is-sm is-ghost"
+            href="https://status.stellar.org"
+            target="_blank"
+            rel="noopener"
+          >
             <Icon name="external-link" size={14} />
             Stellar network status
           </a>

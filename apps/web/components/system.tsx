@@ -3,7 +3,15 @@ import { TestnetBanner } from "./banner";
 import { Logo } from "./icons";
 
 /** The card used by the not-found, error and network-status screens. */
-export function SystemPage({ code, title, children }: { code: string; title: string; children: ReactNode }) {
+export function SystemPage({
+  code,
+  title,
+  children,
+}: {
+  code: string;
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <>
       <TestnetBanner />

@@ -30,9 +30,7 @@ export function AuthPage({
           </div>
           {children}
           <p className="auth-alt">{footer}</p>
-          <p className="fine" style={{ textAlign: "center" }}>
-            
-          </p>
+          <p className="fine" style={{ textAlign: "center" }}></p>
         </div>
       </div>
     </>

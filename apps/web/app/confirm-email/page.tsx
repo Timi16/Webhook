@@ -55,7 +55,8 @@ function Confirm() {
         <div className="wh-alert is-neutral" role="status">
           <Icon name="check-circle" />
           <div className="body">
-            <strong>Email updated.</strong> You now log in with <span className="mono">{result.email}</span>.
+            <strong>Email updated.</strong> You now log in with{" "}
+            <span className="mono">{result.email}</span>.
           </div>
         </div>
       ) : (

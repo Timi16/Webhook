@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ApiError } from "@/lib/api";
+import { explorer } from "@/lib/explorer";
 import { shortAddress, splitAmount } from "@/lib/format";
 import { Icon, type IconName } from "./icons";
+import { useToast } from "./toast";
 
 type Tone = "ok" | "warn" | "bad" | "neutral";
 
@@ -54,6 +56,7 @@ export function Amount({ amount, code, large }: { amount: string; code: string; 
 
 export function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
+  const toast = useToast();
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(false), 1500);
@@ -65,11 +68,30 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       aria-label={copied ? "Copied" : label}
       onClick={() => {
-        void navigator.clipboard.writeText(value).then(() => setCopied(true));
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          toast("Copied");
+        });
       }}
     >
       <Icon name={copied ? "check" : "copy"} size={14} />
     </button>
+  );
+}
+
+/** A small icon link to the public explorer page for an address. */
+export function ExplorerLink({ address }: { address: string }) {
+  return (
+    <a
+      className="wh-copy"
+      href={explorer.address(address)}
+      target="_blank"
+      rel="noopener"
+      aria-label="View on stellar.expert"
+      title="View on stellar.expert"
+    >
+      <Icon name="external-link" size={14} />
+    </a>
   );
 }
 
@@ -78,6 +100,7 @@ export function Address({ value, label = "Copy address" }: { value: string; labe
   return (
     <span className="wh-addr" title={value}>
       {shortAddress(value)} <CopyButton value={value} label={label} />
+      <ExplorerLink address={value} />
     </span>
   );
 }
