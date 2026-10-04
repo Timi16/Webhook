@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { issueText } from "@/components/auth";
@@ -9,8 +10,9 @@ import { useTheme, type ThemeChoice } from "@/components/theme";
 import { ErrorAlert, Field, PageHead } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAction, useApi } from "@/lib/hooks";
-import { dateTime } from "@/lib/format";
+import type { AuditRow } from "@/lib/audit";
 import type { ApiKey, Endpoint, Page, Watch } from "@/lib/types";
+import { AuditItem } from "./audit-log/page";
 
 const THEMES: { value: ThemeChoice; label: string; icon: IconName }[] = [
   { value: "system", label: "Match system", icon: "monitor" },
@@ -18,108 +20,44 @@ const THEMES: { value: ThemeChoice; label: string; icon: IconName }[] = [
   { value: "dark", label: "Dark", icon: "moon" },
 ];
 
-interface AuditRow {
-  id: string;
-  at: string;
-  action: string;
-  targetId: string | null;
-  targetLabel: string | null;
-  actor: "session" | "api_key";
-  apiKeyId: string | null;
-  ip: string | null;
-}
+const AUDIT_PREVIEW = 4;
 
-/** Plain words for the audit log's action names. */
-const ACTIONS: Record<string, string> = {
-  "account.created": "Account created",
-  "account.logged_in": "Logged in",
-  "account.profile_updated": "Profile updated",
-  "account.password_changed": "Password changed",
-  "account.email_change_requested": "Email change requested",
-  "account.email_changed": "Email changed",
-  "api_key.created": "API key created",
-  "api_key.updated": "API key updated",
-  "api_key.rolled": "API key rolled",
-  "api_key.revoked": "API key revoked",
-  "api_key.deleted": "API key deleted",
-  "endpoint.created": "Endpoint added",
-  "endpoint.updated": "Endpoint updated",
-  "endpoint.deleted": "Endpoint deleted",
-  "endpoint.secret_rotated": "Signing secret rotated",
-  "endpoint.enabled": "Endpoint re-enabled",
-  "endpoint.replayed": "Failed webhooks replayed",
-  "watch.created": "Watch created",
-  "watch.updated": "Watch updated",
-  "watch.paused": "Watch paused",
-  "watch.resumed": "Watch resumed",
-  "watch.deleted": "Watch deleted",
-  "event.resent": "Webhook resent",
-};
-const AUDIT_PAGE = 15;
-
-/** Who changed what in the account, newest first. */
+/** The latest few changes, with the way in to the full log. */
 function AuditLog() {
-  const [rows, setRows] = useState<AuditRow[]>([]);
-  const [next, setNext] = useState<string | null>(null);
-  const first = useApi<Page<AuditRow>>(`/v1/audit-log?limit=${AUDIT_PAGE}`);
-  const more = useAction(async (from: string) => {
-    const page = await api<Page<AuditRow>>(
-      `/v1/audit-log?limit=${AUDIT_PAGE}&cursor=${encodeURIComponent(from)}`,
-    );
-    setRows([...rows, ...page.data]);
-    setNext(page.nextCursor);
-  });
-  const all = [...(first.data?.data ?? []), ...rows];
-  const cursor = rows.length > 0 ? next : (first.data?.nextCursor ?? null);
+  const latest = useApi<Page<AuditRow>>(`/v1/audit-log?limit=${AUDIT_PREVIEW}`);
+  const keys = useApi<{ data: ApiKey[] }>("/v1/api-keys");
+  const keyNames = new Map((keys.data?.data ?? []).map((key) => [key.id, key.name]));
+  const rows = latest.data?.data ?? [];
 
   return (
-    <section className="wh-panel wh-resp" id="audit-log">
+    <section className="wh-panel" id="audit-log">
       <header>
         <span className="h">Audit log</span>
-        <span className="wh-reason">who changed what</span>
+        <Link className="wh-btn is-sm" href="/settings/audit-log">
+          View all
+          <Icon name="arrow-right" size={14} />
+        </Link>
       </header>
-      {first.error && !first.data ? (
+      {latest.error && !latest.data ? (
         <div className="panel-body">
           <ErrorAlert
-            error={first.error}
+            error={latest.error}
             title="Couldn't load the audit log."
-            onRetry={first.reload}
+            onRetry={latest.reload}
           />
         </div>
-      ) : all.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="panel-empty">
-          {first.data
+          {latest.data
             ? "Nothing recorded yet. Changes to keys, endpoints, watches and your account will show here."
             : "Loading…"}
         </p>
       ) : (
-        <ul className="audit">
-          {all.map((row) => (
-            <li key={row.id}>
-              <span className="when">{dateTime(row.at)}</span>
-              <span className="what">
-                <b>{ACTIONS[row.action] ?? row.action}</b>
-                {row.targetLabel && <span className="mono"> {row.targetLabel}</span>}
-              </span>
-              <span className="who">
-                {row.actor === "api_key" ? "API key" : "Dashboard"}
-                {row.ip ? ` · ${row.ip}` : ""}
-              </span>
-            </li>
+        <ul className="au-list is-flat">
+          {rows.map((row) => (
+            <AuditItem row={row} keyNames={keyNames} compact key={row.id} />
           ))}
         </ul>
-      )}
-      {cursor && (
-        <div className="panel-foot">
-          <button
-            className="wh-btn is-sm"
-            type="button"
-            disabled={more.pending}
-            onClick={() => void more.run(cursor)}
-          >
-            Show older
-          </button>
-        </div>
       )}
     </section>
   );
