@@ -191,7 +191,7 @@ export function createRegistry(): OpenAPIRegistry {
   return registry;
 }
 
-const apiDescription = (serverUrl: string) => `
+const API_DESCRIPTION = `
 Webhook watches Stellar Testnet wallets and tells your server when they are paid. This reference
 covers every endpoint; the guides explain how the pieces fit together.
 
@@ -304,7 +304,7 @@ export function generateOpenApiDocument(
     info: {
       title: "Webhook API",
       version: "1.0.0",
-      description: apiDescription(serverUrl),
+      description: API_DESCRIPTION,
     },
     servers: [{ url: serverUrl, description: "Webhook API" }],
     tags: TAGS,

@@ -47,5 +47,10 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Plain Node scripts run outside TypeScript, so the Node globals have to be declared.
+    files: ["**/*.mjs"],
+    languageOptions: { globals: { URL: "readonly", console: "readonly", process: "readonly" } },
+  },
   prettier,
 );
