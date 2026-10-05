@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
 import { AuthPage, issueText } from "@/components/auth";
 import { Icon } from "@/components/icons";
-import { Field } from "@/components/ui";
+import { Field, PasswordInput } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAction } from "@/lib/hooks";
 
@@ -37,10 +37,8 @@ function ResetForm() {
         hint="At least 10 characters. A passphrase works well."
         error={passwordError}
       >
-        <input
+        <PasswordInput
           id="password"
-          className="wh-input"
-          type="password"
           autoComplete="new-password"
           required
           aria-invalid={passwordError ? true : undefined}

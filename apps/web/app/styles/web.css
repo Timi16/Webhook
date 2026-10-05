@@ -917,3 +917,33 @@ a.au-target {
   text-underline-offset: 3px;
   cursor: pointer;
 }
+
+/* Password fields: an eye button inside the field to show what was typed. */
+.pw {
+  position: relative;
+  display: block;
+}
+.app .pw .wh-input {
+  width: 100%;
+  padding-right: 48px;
+}
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.pw-toggle:hover,
+.pw-toggle[aria-pressed="true"] {
+  background: var(--surface-hover);
+  color: var(--ink);
+}

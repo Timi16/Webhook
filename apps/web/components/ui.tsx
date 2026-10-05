@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import type { ApiError } from "@/lib/api";
 import { explorer } from "@/lib/explorer";
 import { shortAddress, splitAmount } from "@/lib/format";
@@ -227,5 +227,24 @@ export function Field({
         )
       )}
     </div>
+  );
+}
+
+/** A password field with a button to show what was typed. */
+export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className="pw">
+      <input {...props} className="wh-input" type={shown ? "text" : "password"} />
+      <button
+        type="button"
+        className="pw-toggle"
+        aria-label={shown ? "Hide password" : "Show password"}
+        aria-pressed={shown}
+        onClick={() => setShown(!shown)}
+      >
+        <Icon name={shown ? "eye-off" : "eye"} />
+      </button>
+    </span>
   );
 }

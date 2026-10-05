@@ -7,7 +7,7 @@ import { issueText } from "@/components/auth";
 import { Icon, type IconName } from "@/components/icons";
 import { useSession } from "@/components/session";
 import { useTheme, type ThemeChoice } from "@/components/theme";
-import { ErrorAlert, Field, PageHead } from "@/components/ui";
+import { ErrorAlert, Field, PageHead, PasswordInput } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAction, useApi } from "@/lib/hooks";
 import type { AuditRow } from "@/lib/audit";
@@ -248,10 +248,8 @@ export default function SettingsPage() {
                 hint="To confirm it's you."
                 error={issueText(changeEmail.error?.issueFor("password"))}
               >
-                <input
+                <PasswordInput
                   id="email-password"
-                  className="wh-input"
-                  type="password"
                   autoComplete="current-password"
                   value={emailPassword}
                   aria-invalid={changeEmail.error?.issueFor("password") ? true : undefined}
@@ -307,10 +305,8 @@ export default function SettingsPage() {
                 label="Current password"
                 error={issueText(changePassword.error?.issueFor("currentPassword"))}
               >
-                <input
+                <PasswordInput
                   id="current-password"
-                  className="wh-input"
-                  type="password"
                   autoComplete="current-password"
                   value={currentPassword}
                   aria-invalid={
@@ -328,10 +324,8 @@ export default function SettingsPage() {
                 hint="Signs you out everywhere else."
                 error={issueText(changePassword.error?.issueFor("newPassword"))}
               >
-                <input
+                <PasswordInput
                   id="new-password"
-                  className="wh-input"
-                  type="password"
                   autoComplete="new-password"
                   placeholder="At least 10 characters"
                   value={newPassword}
@@ -419,10 +413,8 @@ export default function SettingsPage() {
               label="Your password"
               error={issueText(deleteAccount.error?.issueFor("password"))}
             >
-              <input
+              <PasswordInput
                 id="delete-password"
-                className="wh-input"
-                type="password"
                 autoComplete="current-password"
                 value={deletePassword}
                 aria-invalid={deleteAccount.error?.issueFor("password") ? true : undefined}

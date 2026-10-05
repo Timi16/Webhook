@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { AuthPage } from "@/components/auth";
 import { Icon } from "@/components/icons";
-import { Field } from "@/components/ui";
+import { Field, PasswordInput } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAction } from "@/lib/hooks";
 
@@ -48,10 +48,8 @@ export default function LoginPage() {
           label="Password"
           labelAside={<Link href="/forgot-password">Forgot password?</Link>}
         >
-          <input
+          <PasswordInput
             id="password"
-            className="wh-input"
-            type="password"
             autoComplete="current-password"
             required
             value={password}
