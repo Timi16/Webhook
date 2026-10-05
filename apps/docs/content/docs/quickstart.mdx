@@ -30,7 +30,16 @@ curl -b cookies.txt -X POST $API/v1/api-keys \
   -d '{"name":"my server"}'
 ```
 
-The second response contains `key`, starting with `whk_test_`. It is shown once; store it now.
+Signing up emails you a 6-digit code, and the account is locked until you confirm it. Run this
+between the two calls above, with the code from the email:
+
+```bash
+curl -b cookies.txt -X POST $API/auth/verify \
+  -H "Origin: $DASHBOARD" -H "Content-Type: application/json" \
+  -d '{"code":"123456"}'
+```
+
+The key-creation response contains `key`, starting with `whk_test_`. It is shown once; store it now.
 
 ```bash
 export KEY=whk_test_...

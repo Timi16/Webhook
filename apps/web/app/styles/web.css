@@ -898,3 +898,22 @@ a.au-target {
     padding-left: 44px;
   }
 }
+
+/* Signup code: big, spaced digits. */
+.app .code-input {
+  font-size: 26px;
+  letter-spacing: 0.4em;
+  text-align: center;
+  height: 56px;
+}
+.linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}

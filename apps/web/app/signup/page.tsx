@@ -23,7 +23,7 @@ export default function SignupPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if ((await signup.run()) !== undefined) router.replace("/onboarding/wallet");
+    if ((await signup.run()) !== undefined) router.replace("/verify-email");
   }
 
   const emailError =

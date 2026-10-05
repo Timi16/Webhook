@@ -21,9 +21,12 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const { data, error, reload } = useApi<{ developer: Developer }>("/auth/me");
   const loggedOut = error?.status === 401;
 
+  // An account is locked until the code emailed at signup has been entered.
+  const unverified = data?.developer.emailVerified === false;
   useEffect(() => {
     if (loggedOut) router.replace("/login");
-  }, [loggedOut, router]);
+    else if (unverified) router.replace("/verify-email");
+  }, [loggedOut, unverified, router]);
 
   if (error && !loggedOut) {
     return (
@@ -34,7 +37,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (!data) return <div className="auth" aria-busy="true" />;
+  if (!data || unverified) return <div className="auth" aria-busy="true" />;
   return (
     <SessionContext.Provider value={{ developer: data.developer, reload }}>
       {children}
