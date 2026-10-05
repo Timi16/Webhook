@@ -5,54 +5,25 @@ description: Create an endpoint, watch a wallet and receive your first webhook.
 
 You need a server reachable over HTTPS (port 443 or 8443) that can receive a `POST`, and `curl`.
 
-Set two variables so the commands below can be pasted as they are:
+## 1. Get an API key
+
+1. [Create an account](https://webhookdev.xyz/signup) in the dashboard and confirm your email with
+   the code we send you.
+2. Open **API keys** and click **Create key**. For this guide, tick all three permissions.
+3. Copy the key. It starts with `whk_test_` and is shown once.
+
+Then set two variables so the commands below can be pasted as they are:
 
 ```bash
-export API=https://api.webhookdev.xyz         # the Webhook API
-export DASHBOARD=https://webhookdev.xyz    # the origin the API trusts for browser requests
-```
-
-## 1. Create an account and an API key
-
-The quickest way is the dashboard: sign up, open **API keys**, click **Create key** and copy the key
-it shows you. [Authentication](/docs/authentication) explains permissions, expiry and IP limits.
-
-To do it from the terminal instead: accounts are session based, so these two calls keep a cookie.
-Every later call uses the API key.
-
-```bash
-curl -c cookies.txt -X POST $API/auth/signup \
-  -H "Origin: $DASHBOARD" -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"a long passphrase"}'
-
-curl -b cookies.txt -X POST $API/v1/api-keys \
-  -H "Origin: $DASHBOARD" -H "Content-Type: application/json" \
-  -d '{"name":"my server"}'
-```
-
-Signing up emails you a 6-digit code, and the account is locked until you confirm it. Run this
-between the two calls above, with the code from the email:
-
-```bash
-curl -b cookies.txt -X POST $API/auth/verify \
-  -H "Origin: $DASHBOARD" -H "Content-Type: application/json" \
-  -d '{"code":"123456"}'
-```
-
-The key-creation response contains `key`, starting with `whk_test_`. It is shown once; store it now.
-
-```bash
+export API=https://api.webhookdev.xyz
 export KEY=whk_test_...
 ```
+
+[Authentication](/docs/authentication) covers permissions, expiry, IP limits and rolling a key.
 
 The examples from here on come in three flavours. The Node.js ones use the built-in `fetch`
 (Node 18 or newer); the Python ones use [`requests`](https://pypi.org/project/requests/). Both read
 the same two environment variables, `API` and `KEY`.
-
-<Callout type="warn">
-  Passwords need at least 10 characters. The `Origin` header is required on these two calls because
-  they use a cookie; calls made with an API key do not need it.
-</Callout>
 
 ## 2. Create an endpoint
 

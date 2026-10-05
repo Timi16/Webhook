@@ -127,6 +127,5 @@ them.
 API keys cannot create, change or revoke API keys, read the audit log, or change account settings.
 Those need you to be logged in to the dashboard, so a leaked key cannot give itself more access.
 
-The dashboard uses a session cookie rather than a key. If you call those endpoints yourself, every
-state-changing request must send an `Origin` header equal to the dashboard's address; the
-[quickstart](/docs/quickstart) shows this for signup and key creation.
+The dashboard itself uses a login session rather than a key. Accounts and API keys are created
+there, not through the API.

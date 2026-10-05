@@ -1,6 +1,6 @@
 // Points the docs at the real addresses, once, when the domain exists:
 //   pnpm --filter @webhook/docs set-urls https://api.example.com https://app.example.com
-// It updates site.json and the two `export` lines in the quickstart, then regenerates the API
+// It updates site.json, the `export API` line and the signup link in the quickstart, then regenerates the API
 // reference so every code sample shows the same address.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -19,7 +19,7 @@ const quickstartPath = new URL('../content/docs/quickstart.mdx', import.meta.url
 const quickstart = readFileSync(quickstartPath, 'utf8');
 const updated = quickstart
   .replace(/^export API=\S+/m, `export API=${apiUrl}`)
-  .replace(/^export DASHBOARD=\S+/m, `export DASHBOARD=${dashboardUrl}`);
+  .replace(/\]\(https?:\/\/[^)\s]+\/signup\)/, `](${dashboardUrl}/signup)`);
 if (updated === quickstart && !quickstart.includes(`export API=${apiUrl}`)) {
   console.error('Could not find the export lines in quickstart.mdx');
   process.exit(1);
