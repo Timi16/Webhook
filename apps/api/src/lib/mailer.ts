@@ -5,6 +5,8 @@ export interface Mail {
   to: string;
   subject: string;
   text: string;
+  /** The designed version; `text` is what mail clients fall back to. */
+  html?: string;
 }
 
 export interface Mailer {
@@ -39,6 +41,7 @@ export function createMailer(
             to: [mail.to],
             subject: mail.subject,
             text: mail.text,
+            ...(mail.html ? { html: mail.html } : {}),
           }),
           signal: AbortSignal.timeout(10_000),
         });

@@ -16,6 +16,9 @@ export const developerResponse = z.strictObject({
   email: z.string(),
   name: z.string().nullable(),
   workspace: z.string().nullable(),
+  emailVerified: z
+    .boolean()
+    .describe("False until the code emailed at signup is entered; the account is locked until then"),
   createdAt: timestamp,
 });
 export const developerEnvelope = z.strictObject({ developer: developerResponse });

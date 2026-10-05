@@ -1,6 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import type { Developer } from "@prisma/client";
 import type { Env } from "../../config/env.js";
+import { renderEmail } from "../../lib/emailTemplate.js";
 import { AppError } from "../../lib/errors.js";
 import { generateSessionToken } from "../../lib/ids.js";
 import type { Mailer } from "../../lib/mailer.js";
@@ -15,6 +16,11 @@ import type { AuthRepo } from "./repo.js";
 export const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const RESET_TTL_MS = 60 * 60 * 1000;
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
+const VERIFY_CODE_TTL_MS = 15 * 60 * 1000;
+/** A new code can be requested this often. */
+const VERIFY_RESEND_WAIT_MS = 60 * 1000;
+/** Wrong guesses allowed per code; after that a new code is needed. */
+const VERIFY_MAX_ATTEMPTS = 5;
 const MAX_LOGIN_DELAY_MS = 4_000;
 
 export interface SessionMeta {
@@ -27,6 +33,7 @@ export interface PublicDeveloper {
   email: string;
   name: string | null;
   workspace: string | null;
+  emailVerified: boolean;
   createdAt: string;
 }
 
@@ -36,6 +43,7 @@ function toPublic(developer: Developer): PublicDeveloper {
     email: developer.email,
     name: developer.name,
     workspace: developer.workspace,
+    emailVerified: developer.emailVerifiedAt !== null,
     createdAt: developer.createdAt.toISOString(),
   };
 }
@@ -60,7 +68,7 @@ export interface AuthServiceOptions {
 
 export function createAuthService(
   repo: AuthRepo,
-  env: Pick<Env, "SESSION_SECRET" | "DASHBOARD_ORIGIN">,
+  env: Pick<Env, "SESSION_SECRET" | "DASHBOARD_ORIGIN" | "SKIP_EMAIL_VERIFICATION">,
   mailer: Mailer,
   options: AuthServiceOptions = {},
 ) {
@@ -98,6 +106,37 @@ export function createAuthService(
       .update(`email.${developerId}.${expiresAt}.${newEmail}.${currentEmail}.${passwordHash}`)
       .digest("hex");
   }
+  const verifyCodeHash = (developerId: string, code: string) =>
+    createHmac("sha256", env.SESSION_SECRET).update(`verify.${developerId}.${code}`).digest("hex");
+  const verifyError = (issue: string) =>
+    new AppError("VALIDATION_FAILED", `code: ${issue}`, { details: [{ path: "code", issue }] });
+
+  /** Emails a fresh 6-digit code. Only its hash is stored. */
+  async function sendVerifyCode(developer: Developer): Promise<void> {
+    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const now = new Date();
+    await repo.setVerifyCode(
+      developer.id,
+      verifyCodeHash(developer.id, code),
+      new Date(now.getTime() + VERIFY_CODE_TTL_MS),
+      now,
+    );
+    await mailer.send({
+      to: developer.email,
+      subject: `${code} is your Webhook code`,
+      ...renderEmail({
+        preview: "Enter this code to finish creating your account. It works for 15 minutes.",
+        heading: "Confirm your email",
+        paragraphs: [
+          "Enter this code in the dashboard to finish creating your Webhook account. It works for 15 minutes.",
+        ],
+        code,
+        footnote:
+          "If you didn't sign up for Webhook, ignore this email. No account is usable without this code.",
+      }),
+    });
+  }
+
   const emailTaken = () => new AppError("CONFLICT", "An account with this email already exists");
   const isUniqueViolation = (err: unknown) =>
     typeof err === "object" && err !== null && "code" in err && err.code === "P2002";
@@ -118,6 +157,7 @@ export function createAuthService(
           passwordHash,
           ...(input.name ? { name: input.name } : {}),
           ...(input.workspace ? { workspace: input.workspace } : {}),
+          ...(env.SKIP_EMAIL_VERIFICATION === "true" ? { emailVerifiedAt: new Date() } : {}),
         })
         .catch((err: unknown) => {
           // Two signups for the same email raced past the check above; the unique index decides.
@@ -126,7 +166,55 @@ export function createAuthService(
           }
           throw err;
         });
+      // The session starts now so the person stays in the signup flow, but until the code is
+      // entered it can do nothing except verify, resend, log out or delete the account.
+      if (!developer.emailVerifiedAt) await sendVerifyCode(developer);
       return { developer: toPublic(developer), token: await startSession(developer.id, meta) };
+    },
+
+    /** Checks the code emailed at signup and unlocks the account. */
+    async verifyEmail(developerId: string, code: string) {
+      const developer = await repo.findDeveloper(developerId);
+      if (!developer)
+        throw new AppError("UNAUTHENTICATED", "A valid session or API key is required");
+      if (developer.emailVerifiedAt)
+        throw new AppError("CONFLICT", "This email is already verified");
+      if (
+        !developer.verifyCodeHash ||
+        !developer.verifyCodeExpiresAt ||
+        developer.verifyCodeExpiresAt <= new Date()
+      ) {
+        throw verifyError("code_expired");
+      }
+      if (developer.verifyAttempts >= VERIFY_MAX_ATTEMPTS) throw verifyError("too_many_attempts");
+      const expected = Buffer.from(developer.verifyCodeHash, "hex");
+      const given = Buffer.from(verifyCodeHash(developer.id, code), "hex");
+      if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+        await repo.countVerifyAttempt(developer.id);
+        throw verifyError(
+          developer.verifyAttempts + 1 >= VERIFY_MAX_ATTEMPTS
+            ? "too_many_attempts"
+            : "invalid_code",
+        );
+      }
+      return { developer: toPublic(await repo.markVerified(developer.id)) };
+    },
+
+    /** Sends a new code, at most once a minute. The previous code stops working. */
+    async resendVerifyCode(developerId: string): Promise<void> {
+      const developer = await repo.findDeveloper(developerId);
+      if (!developer)
+        throw new AppError("UNAUTHENTICATED", "A valid session or API key is required");
+      if (developer.emailVerifiedAt)
+        throw new AppError("CONFLICT", "This email is already verified");
+      const waited = developer.verifyCodeSentAt
+        ? Date.now() - developer.verifyCodeSentAt.getTime()
+        : Infinity;
+      if (waited < VERIFY_RESEND_WAIT_MS) {
+        const seconds = Math.ceil((VERIFY_RESEND_WAIT_MS - waited) / 1000);
+        throw new AppError("RATE_LIMITED", `Wait ${seconds} s before asking for another code`);
+      }
+      await sendVerifyCode(developer);
     },
 
     async login(
@@ -220,14 +308,32 @@ export function createAuthService(
       await mailer.send({
         to: input.email,
         subject: "Confirm your new Webhook email",
-        text: `Use this link within 1 hour to make this your Webhook login email:\n\n${env.DASHBOARD_ORIGIN}/confirm-email?token=${payload}.${signature}\n\nIf you didn't ask for this, ignore this email.`,
+        ...renderEmail({
+          preview: "Confirm this address to make it your Webhook login.",
+          heading: "Confirm your new email",
+          paragraphs: ["Use this link within 1 hour to make this your Webhook login email."],
+          button: {
+            label: "Confirm this email",
+            url: `${env.DASHBOARD_ORIGIN}/confirm-email?token=${payload}.${signature}`,
+          },
+          footnote: "If you didn't ask for this, ignore this email. Nothing changes.",
+        }),
       });
       // The current address hears about it too: if this was not them, they still have the hour.
       void mailer
         .send({
           to: developer.email,
           subject: "A change of your Webhook email was requested",
-          text: `Someone logged in to your account asked to change its email to ${input.email}. Nothing changes unless the link sent to that address is opened within 1 hour.\n\nIf this was not you, change your password now: that cancels the request.`,
+          ...renderEmail({
+            preview: "If this was not you, change your password now.",
+            heading: "An email change was requested",
+            paragraphs: [
+              `Someone logged in to your account asked to change its email to ${input.email}.`,
+              "Nothing changes unless the link sent to that address is opened within 1 hour.",
+            ],
+            button: { label: "Open settings", url: `${env.DASHBOARD_ORIGIN}/settings` },
+            footnote: "If this was not you, change your password now: that cancels the request.",
+          }),
         })
         .catch(() => {});
     },
@@ -307,7 +413,17 @@ export function createAuthService(
         .send({
           to: developer.email,
           subject: "Reset your Webhook password",
-          text: `Use this link within 1 hour to choose a new password:\n\n${env.DASHBOARD_ORIGIN}/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email.`,
+          ...renderEmail({
+            preview: "Choose a new password. The link works for 1 hour.",
+            heading: "Reset your password",
+            paragraphs: ["Use this link within 1 hour to choose a new password."],
+            button: {
+              label: "Choose a new password",
+              url: `${env.DASHBOARD_ORIGIN}/reset-password?token=${token}`,
+            },
+            footnote:
+              "If you didn't ask for this, ignore this email. Your password stays as it is.",
+          }),
         })
         .catch(() => {});
     },

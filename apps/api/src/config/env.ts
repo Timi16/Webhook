@@ -39,15 +39,22 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().min(3).default("Webhook <onboarding@resend.dev>"),
   // Local development only: lets endpoints use http, any port and private IPs (e.g. the mock receiver).
   ALLOW_INSECURE_WEBHOOK_TARGETS: z.enum(["true", "false"]).default("false"),
+  // Local development and scripts only: new accounts start verified and no code is emailed.
+  SKIP_EMAIL_VERIFICATION: z.enum(["true", "false"]).default("false"),
   // Webhooks being sent at the same time, overall. Per developer (10) and per endpoint (5) are fixed.
   MAX_CONCURRENT_DELIVERIES: z.coerce.number().int().min(1).max(200).default(50),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 
-const checkedEnvSchema = envSchema.refine(
-  (env) => !(env.NODE_ENV === "production" && env.ALLOW_INSECURE_WEBHOOK_TARGETS === "true"),
-  { error: "must not be enabled in production", path: ["ALLOW_INSECURE_WEBHOOK_TARGETS"] },
-);
+const checkedEnvSchema = envSchema
+  .refine(
+    (env) => !(env.NODE_ENV === "production" && env.ALLOW_INSECURE_WEBHOOK_TARGETS === "true"),
+    { error: "must not be enabled in production", path: ["ALLOW_INSECURE_WEBHOOK_TARGETS"] },
+  )
+  .refine((env) => !(env.NODE_ENV === "production" && env.SKIP_EMAIL_VERIFICATION === "true"), {
+    error: "must not be enabled in production",
+    path: ["SKIP_EMAIL_VERIFICATION"],
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

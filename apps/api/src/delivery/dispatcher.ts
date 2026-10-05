@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { Env } from "../config/env.js";
 import { CHANNELS, notify } from "../db/notify.js";
 import { decryptSecret } from "../lib/crypto.js";
+import { renderEmail } from "../lib/emailTemplate.js";
 import type { Logger } from "../lib/logger.js";
 import type { Mailer } from "../lib/mailer.js";
 import { applyEndpointEffect, classifyAttempt, type EndpointChange } from "./endpointHealth.js";
@@ -15,7 +16,7 @@ const POLL_INTERVAL_MS = 1_000;
 export interface DispatcherDeps {
   prisma: PrismaClient;
   http: SafeHttpClient;
-  env: Pick<Env, "ENCRYPTION_KEY">;
+  env: Pick<Env, "ENCRYPTION_KEY" | "DASHBOARD_ORIGIN">;
   logger: Logger;
   mailer: Mailer;
   /** Sends in flight overall. */
@@ -313,7 +314,15 @@ export class Dispatcher {
     await this.deps.mailer.send({
       to: endpoint.developer.email,
       subject: "Your Webhook endpoint was disabled",
-      text: `Your endpoint ${endpoint.url} was disabled because ${why}.\n\nNo further webhooks will be sent to it. Once it is fixed, re-enable it in the dashboard and use Replay to resend the failed events.`,
+      ...renderEmail({
+        preview: "No further webhooks will be sent to it until you re-enable it.",
+        heading: "An endpoint was disabled",
+        paragraphs: [
+          `Your endpoint ${endpoint.url} was disabled because ${why}.`,
+          "No further webhooks will be sent to it. Once it is fixed, re-enable it in the dashboard and use Replay to resend the failed events.",
+        ],
+        button: { label: "Open endpoints", url: `${this.deps.env.DASHBOARD_ORIGIN}/endpoints` },
+      }),
     });
   }
 }

@@ -10,6 +10,7 @@ import {
   resetPasswordSchema,
   signupSchema,
   updateProfileSchema,
+  verifyEmailSchema,
 } from "@webhook/shared";
 import {
   Router,
@@ -62,7 +63,7 @@ export function createAuthRouter(
       response: developerEnvelope,
       summary: "Create an account",
       description:
-        "Creates a developer account and starts a session. Passwords need at least 10 characters and must not be a common password.",
+        "Creates a developer account, starts a session and emails a 6-digit code. Until that code is sent to `POST /auth/verify` the account is locked: every other request answers `403 EMAIL_NOT_VERIFIED`. Passwords need at least 10 characters and must not be a common password.",
       tag: "Auth",
       auth: "none",
       status: 201,
@@ -74,6 +75,48 @@ export function createAuthRouter(
       setSession(res, token);
       return { developer };
     },
+  );
+
+  api(
+    router,
+    {
+      method: "post",
+      path: "/auth/verify",
+      response: developerEnvelope,
+      summary: "Confirm your email with the signup code",
+      description:
+        "Unlocks the account with the 6-digit code emailed at signup. A code works for 15 minutes and allows 5 wrong guesses; after that, ask for a new one. Answers `409` if the email is already verified.",
+      tag: "Auth",
+      auth: "session",
+      allowUnverified: true,
+      body: verifyEmailSchema,
+      before: [guards.authLimit],
+      audit: {
+        action: "account.email_verified",
+        target: (r) => {
+          const d = (r as { developer: { id: string; email: string } }).developer;
+          return { id: d.id, label: d.email };
+        },
+      },
+    },
+    ({ auth, body }) => service.verifyEmail(auth.developerId, body.code),
+  );
+
+  api(
+    router,
+    {
+      method: "post",
+      path: "/auth/verify/resend",
+      summary: "Email a new signup code",
+      description:
+        "Sends a fresh code and cancels the previous one. Allowed once a minute; answers `409` if the email is already verified.",
+      tag: "Auth",
+      auth: "session",
+      allowUnverified: true,
+      status: 204,
+      before: [guards.authLimit],
+    },
+    ({ auth }) => service.resendVerifyCode(auth.developerId),
   );
 
   api(
@@ -137,6 +180,7 @@ export function createAuthRouter(
       description: "The developer the session belongs to.",
       tag: "Auth",
       auth: "session",
+      allowUnverified: true,
     },
     ({ auth }) => service.me(auth.developerId),
   );
@@ -174,6 +218,7 @@ export function createAuthRouter(
         "Deletes the account with its watches, endpoints, API keys and all payment and webhook history. Webhooks stop immediately. Needs the current password. This cannot be undone.",
       tag: "Auth",
       auth: "session",
+      allowUnverified: true,
       status: 204,
       body: deleteAccountSchema,
       before: [guards.authLimit],

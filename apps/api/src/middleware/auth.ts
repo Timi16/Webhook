@@ -14,6 +14,8 @@ export interface AuthContext {
   developerId: string;
   via: "session" | "apiKey";
   apiKeyId?: string;
+  /** False until the developer has entered the code emailed at signup. */
+  verified: boolean;
   /** What the API key may do. Sessions are not limited by scopes. */
   scopes?: string[];
   sessionId?: string;
@@ -36,7 +38,12 @@ export function createAuth(prisma: PrismaClient) {
   let lastPrune = 0;
 
   /** Records the request in the key's log once the response is sent. Never the query string. */
-  function logRequest(req: Request, res: Response, apiKey: ApiKey, ip: string | null): void {
+  function logRequest(
+    req: Request,
+    res: Response,
+    apiKey: Pick<ApiKey, "id">,
+    ip: string | null,
+  ): void {
     const startedAt = Date.now();
     res.on("finish", () => {
       const now = Date.now();
@@ -65,7 +72,10 @@ export function createAuth(prisma: PrismaClient) {
 
   async function fromApiKey(req: Request, res: Response, key: string): Promise<AuthContext | null> {
     if (!key.startsWith(API_KEY_PREFIX)) return null;
-    const apiKey = await prisma.apiKey.findUnique({ where: { keyHash: sha256Hex(key) } });
+    const apiKey = await prisma.apiKey.findUnique({
+      where: { keyHash: sha256Hex(key) },
+      include: { developer: { select: { emailVerifiedAt: true } } },
+    });
     const now = new Date();
     // A rolled key carries a revokedAt in the future: it works until then.
     if (!apiKey || (apiKey.revokedAt && apiKey.revokedAt <= now)) return null;
@@ -85,6 +95,7 @@ export function createAuth(prisma: PrismaClient) {
     return {
       developerId: apiKey.developerId,
       via: "apiKey",
+      verified: apiKey.developer.emailVerifiedAt !== null,
       apiKeyId: apiKey.id,
       scopes: apiKey.scopes,
     };
@@ -94,9 +105,17 @@ export function createAuth(prisma: PrismaClient) {
     const token: unknown = req.cookies?.[SESSION_COOKIE];
     if (typeof token !== "string" || token.length === 0) return null;
     const id = sha256Hex(token);
-    const session = await prisma.session.findUnique({ where: { id } });
+    const session = await prisma.session.findUnique({
+      where: { id },
+      include: { developer: { select: { emailVerifiedAt: true } } },
+    });
     if (!session || session.expiresAt <= new Date()) return null;
-    return { developerId: session.developerId, via: "session", sessionId: id };
+    return {
+      developerId: session.developerId,
+      via: "session",
+      verified: session.developer.emailVerifiedAt !== null,
+      sessionId: id,
+    };
   }
 
   const requireAny: RequestHandler = async (req, res, next) => {

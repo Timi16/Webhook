@@ -37,7 +37,8 @@ export function makeTestApp(
   overrides: Partial<AppDeps> = {},
   envOverrides: Record<string, string | undefined> = {},
 ): TestApp {
-  const env = testEnv(envOverrides);
+  // Accounts start verified unless a test asks for the real signup flow.
+  const env = testEnv({ SKIP_EMAIL_VERIFICATION: "true", ...envOverrides });
   const mails: Mail[] = [];
   const mailer: Mailer = { send: async (mail) => void mails.push(mail) };
   const chunks: string[] = [];

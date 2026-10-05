@@ -1704,6 +1704,142 @@ describe("documented responses", () => {
   });
 });
 
+describe("signup email verification", () => {
+  let real: TestApp;
+  beforeAll(() => {
+    real = makeTestApp(db, {}, { SKIP_EMAIL_VERIFICATION: "false" });
+  });
+  const signUp = async () => {
+    const email = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    const before = real.mails.length;
+    const res = await request(real.app)
+      .post("/auth/signup")
+      .set("Origin", ORIGIN)
+      .send({ email, password: PASSWORD });
+    expect(res.status).toBe(201);
+    const cookie = (res.headers["set-cookie"] as unknown as string[])[0]!.split(";")[0]!;
+    const mail = real.mails[before]!;
+    return {
+      email,
+      cookie,
+      mail,
+      code: /\b(\d{6})\b/.exec(mail.text)![1]!,
+      id: res.body.developer.id as string,
+    };
+  };
+  const post = (cookie: string, path: string, body?: Record<string, unknown>) =>
+    request(real.app).post(path).set("Origin", ORIGIN).set("Cookie", cookie).send(body);
+
+  it("emails a 6-digit code, locks the account until it is entered, then unlocks it", async () => {
+    const account = await signUp();
+    expect(account.mail.to).toBe(account.email);
+    expect(account.mail.subject).toContain(account.code);
+    expect(account.mail.html).toContain(account.code);
+    // Only the hash of the code is stored.
+    const row = await prisma.developer.findUniqueOrThrow({ where: { id: account.id } });
+    expect(row.emailVerifiedAt).toBeNull();
+    expect(JSON.stringify(row)).not.toContain(account.code);
+
+    const me = await request(real.app).get("/auth/me").set("Cookie", account.cookie);
+    expect(me.body.developer).toMatchObject({ email: account.email, emailVerified: false });
+    // Everything else is locked.
+    for (const [method, path] of [
+      ["get", "/v1/watches"],
+      ["get", "/v1/api-keys"],
+      ["post", "/v1/api-keys"],
+      ["get", "/v1/audit-log"],
+      ["patch", "/auth/me"],
+    ] as const) {
+      const res = await request(real.app)
+        [method](path)
+        .set("Origin", ORIGIN)
+        .set("Cookie", account.cookie)
+        .send(method === "get" ? undefined : { name: "x" });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(res.body.error.code).toBe("EMAIL_NOT_VERIFIED");
+    }
+
+    const wrong = account.code === "000000" ? "000001" : "000000";
+    const bad = await post(account.cookie, "/auth/verify", { code: wrong });
+    expect(bad.body.error.details).toEqual([{ path: "code", issue: "invalid_code" }]);
+    expect((await post(account.cookie, "/auth/verify", { code: "12345" })).status).toBe(400);
+
+    const ok = await post(account.cookie, "/auth/verify", { code: account.code });
+    expect(ok.status).toBe(200);
+    expect(ok.body.developer.emailVerified).toBe(true);
+    expect((await request(real.app).get("/v1/watches").set("Cookie", account.cookie)).status).toBe(
+      200,
+    );
+    // Once verified there is nothing left to confirm, and a new code is no longer on offer.
+    expect((await post(account.cookie, "/auth/verify", { code: account.code })).status).toBe(409);
+    expect((await post(account.cookie, "/auth/verify/resend")).status).toBe(409);
+    const log = await request(real.app).get("/v1/audit-log").set("Cookie", account.cookie);
+    expect(log.body.data.map((r: { action: string }) => r.action)).toEqual([
+      "account.email_verified",
+      "account.created",
+    ]);
+  });
+
+  it("allows five wrong guesses per code, then needs a new one", async () => {
+    const account = await signUp();
+    const wrong = account.code === "000000" ? "000001" : "000000";
+    const issues: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const res = await post(account.cookie, "/auth/verify", { code: wrong });
+      issues.push(res.body.error.details[0].issue as string);
+    }
+    expect(issues).toEqual([
+      "invalid_code",
+      "invalid_code",
+      "invalid_code",
+      "invalid_code",
+      "too_many_attempts",
+    ]);
+    // Even the right code is refused now.
+    const locked = await post(account.cookie, "/auth/verify", { code: account.code });
+    expect(locked.body.error.details).toEqual([{ path: "code", issue: "too_many_attempts" }]);
+  });
+
+  it("sends a new code at most once a minute; the old code stops working and codes expire", async () => {
+    const account = await signUp();
+    const soon = await post(account.cookie, "/auth/verify/resend");
+    expect(soon.status).toBe(429);
+    await prisma.developer.update({
+      where: { id: account.id },
+      data: { verifyCodeSentAt: new Date(Date.now() - 61_000) },
+    });
+    const before = real.mails.length;
+    expect((await post(account.cookie, "/auth/verify/resend")).status).toBe(204);
+    const fresh = /\b(\d{6})\b/.exec(real.mails[before]!.text)![1]!;
+    if (fresh !== account.code) {
+      const old = await post(account.cookie, "/auth/verify", { code: account.code });
+      expect(old.body.error.details).toEqual([{ path: "code", issue: "invalid_code" }]);
+    }
+    await prisma.developer.update({
+      where: { id: account.id },
+      data: { verifyCodeExpiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await post(account.cookie, "/auth/verify", { code: fresh });
+    expect(expired.body.error.details).toEqual([{ path: "code", issue: "code_expired" }]);
+  });
+
+  it("an unverified account can still log in, log out and be deleted", async () => {
+    const account = await signUp();
+    const login = await request(real.app)
+      .post("/auth/login")
+      .set("Origin", ORIGIN)
+      .send({ email: account.email, password: PASSWORD });
+    expect(login.status).toBe(200);
+    expect(login.body.developer.emailVerified).toBe(false);
+    const gone = await request(real.app)
+      .delete("/auth/me")
+      .set("Origin", ORIGIN)
+      .set("Cookie", account.cookie)
+      .send({ password: PASSWORD });
+    expect(gone.status).toBe(204);
+  });
+});
+
 describe("audit log", () => {
   it("records each account change with who made it, and never a secret", async () => {
     const dev = await t.signup();

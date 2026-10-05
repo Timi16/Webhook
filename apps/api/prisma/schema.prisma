@@ -13,6 +13,11 @@ model Developer {
   passwordHash String
   name         String?
   workspace    String?    // display name for the account, e.g. a company
+  emailVerifiedAt     DateTime?  // null until the signup code is entered; the account is locked until then
+  verifyCodeHash      String?    // HMAC of the 6-digit code, never the code
+  verifyCodeExpiresAt DateTime?
+  verifyCodeSentAt    DateTime?
+  verifyAttempts      Int        @default(0) // wrong guesses at the current code
   createdAt    DateTime   @default(now())
   sessions     Session[]
   apiKeys      ApiKey[]

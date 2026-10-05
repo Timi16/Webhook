@@ -172,6 +172,7 @@ value, or on any network passphrase other than testnet's.
 | `MAX_CONCURRENT_DELIVERIES`                          | Webhooks sent at the same time, overall. Default 50                                |
 | `HOST`                                               | Address to listen on. Default `127.0.0.1` in production, every interface otherwise |
 | `TRUST_PROXY`                                        | Reverse proxies in front of the API. Default 1 in production, 0 otherwise          |
+| `SKIP_EMAIL_VERIFICATION`                            | Local runs and scripts only: new accounts skip the emailed code                    |
 | `ALLOW_INSECURE_WEBHOOK_TARGETS`                     | Local development only; refused in production                                      |
 
 ## API

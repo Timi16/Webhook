@@ -10,9 +10,36 @@ export function createAuthRepo(prisma: PrismaClient) {
       passwordHash: string;
       name?: string;
       workspace?: string;
+      emailVerifiedAt?: Date;
     }) => prisma.developer.create({ data }),
     updateProfile: (developerId: string, data: { name?: string; workspace?: string | null }) =>
       prisma.developer.update({ where: { id: developerId }, data }),
+    /** Stores a fresh signup code (as a hash) and starts its attempt count again. */
+    setVerifyCode: (developerId: string, codeHash: string, expiresAt: Date, sentAt: Date) =>
+      prisma.developer.update({
+        where: { id: developerId },
+        data: {
+          verifyCodeHash: codeHash,
+          verifyCodeExpiresAt: expiresAt,
+          verifyCodeSentAt: sentAt,
+          verifyAttempts: 0,
+        },
+      }),
+    countVerifyAttempt: (developerId: string) =>
+      prisma.developer.update({
+        where: { id: developerId },
+        data: { verifyAttempts: { increment: 1 } },
+      }),
+    markVerified: (developerId: string) =>
+      prisma.developer.update({
+        where: { id: developerId },
+        data: {
+          emailVerifiedAt: new Date(),
+          verifyCodeHash: null,
+          verifyCodeExpiresAt: null,
+          verifyAttempts: 0,
+        },
+      }),
     setEmail: (developerId: string, email: string) =>
       prisma.developer.update({ where: { id: developerId }, data: { email } }),
 

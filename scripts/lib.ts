@@ -61,9 +61,17 @@ export async function developerClient(
   const cookie = res.headers.getSetCookie()[0]?.split(";")[0];
   if (!cookie) throw new Error("no session cookie returned");
   const session = client({ cookie, origin: DASHBOARD_ORIGIN });
-  const { key } = await session.post<{ key: string }>("/v1/api-keys", {
-    name: `script ${new Date().toISOString()}`,
-  });
+  const { key } = await session
+    .post<{ key: string }>("/v1/api-keys", { name: `script ${new Date().toISOString()}` })
+    .catch((err: unknown) => {
+      // A script cannot read the emailed signup code.
+      if (err instanceof ApiError && err.status === 403) {
+        throw new Error(
+          "The account's email is not verified. For scripted runs set SKIP_EMAIL_VERIFICATION=true in apps/api/.env and restart the API.",
+        );
+      }
+      throw err;
+    });
   return { api: client({ authorization: `Bearer ${key}` }), key };
 }
 

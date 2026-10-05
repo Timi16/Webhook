@@ -21,6 +21,8 @@ export interface RouteSpec<
   description?: string;
   tag: string;
   auth: AuthMode;
+  /** Reachable before the signup code has been entered. Everything else is locked until then. */
+  allowUnverified?: boolean;
   /** The permission an API key needs for this route. Sessions are never limited by it. */
   scope?: ApiKeyScope;
   /** Success status; 204 sends no body. Default 200. */
@@ -199,6 +201,17 @@ export function createApi(deps: ApiDeps) {
         deps.requireOrigin,
         deps.apiLimit,
       );
+      if (!spec.allowUnverified) {
+        chain.push((req, _res, next) => {
+          if (req.auth && !req.auth.verified) {
+            throw new AppError(
+              "EMAIL_NOT_VERIFIED",
+              "Enter the code we emailed you to finish creating your account",
+            );
+          }
+          next();
+        });
+      }
       const scope = spec.scope;
       if (scope) {
         chain.push((req, _res, next) => {
@@ -307,6 +320,7 @@ returned in the \`X-Request-Id\` header.
 - \`SSRF_BLOCKED\` (400): Endpoint URL resolves to a private or internal address.
 - \`UNAUTHENTICATED\` (401): Missing, invalid or revoked credentials.
 - \`FORBIDDEN\` (403): The API key lacks the permission for this request, or is used from an IP address it does not allow.
+- \`EMAIL_NOT_VERIFIED\` (403): The account exists but the code emailed at signup has not been entered yet.
 - \`FORBIDDEN_ORIGIN\` (403): Cookie request without the expected \`Origin\` header.
 - \`NOT_FOUND\` (404): The resource does not exist or belongs to someone else.
 - \`CONFLICT\` (409): For example an email already in use, or a limit reached.
