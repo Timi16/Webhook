@@ -81,7 +81,10 @@ export const changeEmailSchema = z.strictObject({
   password: z.string().min(1).max(200),
 });
 export const verifyEmailSchema = z.strictObject({
-  code: z.string().trim().regex(/^\d{6}$/, "invalid_code"),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "invalid_code"),
 });
 export const confirmEmailSchema = z.strictObject({ token: z.string().min(1).max(1000) });
 export const deleteAccountSchema = z.strictObject({ password: z.string().min(1).max(200) });
