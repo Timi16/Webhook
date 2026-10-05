@@ -7,5 +7,8 @@ const site = JSON.parse(readFileSync(new URL('../site.json', import.meta.url), '
 const env = { ...process.env, API_PUBLIC_URL: process.env.API_PUBLIC_URL ?? site.apiUrl };
 const run = (command, args) => execFileSync(command, args, { stdio: 'inherit', env });
 
+// The API's code imports the Prisma client, which only exists after it has been generated. A
+// host that builds just this app (Vercel, Cloudflare Pages) has not done that yet.
+run('pnpm', ['--filter', '@webhook/api', 'exec', 'prisma', 'generate']);
 run('pnpm', ['--filter', '@webhook/api', 'openapi', '../docs/public/openapi.json']);
 run('node', ['scripts/client-examples.mjs']);
