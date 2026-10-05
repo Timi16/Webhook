@@ -87,14 +87,22 @@ pnpm build:docs                     # static site in apps/docs/out
 The verification snippet on the "Verifying signatures" page is extracted and run against the real
 signer by the API's tests, and every response is checked against the schema shown in the reference.
 
-### Setting the real addresses
+### The real addresses
 
-The docs show `https://api.your-domain.com` until the API has a real address. When it does, run
-this once and commit the result; it updates the quickstart and every code sample in the reference:
+The docs point at `https://api.webhookdev.xyz` (API) and `https://webhookdev.xyz` (dashboard).
+To change them, run this and commit the result; it updates the quickstart and every code sample:
 
 ```sh
 pnpm --filter @webhook/docs set-urls https://api.example.com https://app.example.com
 ```
+
+The same addresses have to be set where each part is deployed:
+
+| Where                        | Setting                | Value                         |
+| ---------------------------- | ---------------------- | ----------------------------- |
+| API server, `apps/api/.env`  | `DASHBOARD_ORIGIN`     | `https://webhookdev.xyz`      |
+| Dashboard build (`apps/web`) | `NEXT_PUBLIC_API_URL`  | `https://api.webhookdev.xyz`  |
+| Dashboard build (`apps/web`) | `NEXT_PUBLIC_DOCS_URL` | `https://docs.webhookdev.xyz` |
 
 ### Deploying to Cloudflare Pages
 
