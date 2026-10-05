@@ -1,12 +1,14 @@
 // Generates public/openapi.json from the API's own schemas, with the address from site.json as
 // the server URL (API_PUBLIC_URL overrides it), then adds the client-library examples.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 
 const site = JSON.parse(readFileSync(new URL('../site.json', import.meta.url), 'utf8'));
 const env = { ...process.env, API_PUBLIC_URL: process.env.API_PUBLIC_URL ?? site.apiUrl };
 const run = (command, args) => execFileSync(command, args, { stdio: 'inherit', env });
 
+// public/ holds only generated files, so it does not exist in a fresh clone.
+mkdirSync(new URL('../public', import.meta.url), { recursive: true });
 // The API's code imports the Prisma client, which only exists after it has been generated. A
 // host that builds just this app (Vercel, Cloudflare Pages) has not done that yet.
 run('pnpm', ['--filter', '@webhook/api', 'exec', 'prisma', 'generate']);
